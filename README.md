@@ -26,6 +26,23 @@ Microchip TSN 스위치 설정을 위한 CLI 도구
 npm install
 ```
 
+## 시작하기
+
+장비와 통신하기 전에 YANG 카탈로그를 다운로드해야 합니다. 최초 1회만 수행하면 됩니다.
+
+```bash
+# 1. 장비의 YANG 카탈로그 체크섬 확인
+./keti-tsn checksum
+
+# 2. YANG 카탈로그 다운로드 (체크섬 기반으로 자동 다운로드)
+./keti-tsn download
+
+# 3. 다운로드된 카탈로그 확인
+./keti-tsn list
+```
+
+이후 `fetch`, `patch`, `get` 등의 명령을 사용할 수 있습니다.
+
 ## 사용법
 
 ```bash
