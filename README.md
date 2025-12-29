@@ -1,24 +1,24 @@
 # keti-tsn-cli
 
-TSN 스위치(LAN9662) 설정을 위한 CLI 도구
+Microchip TSN 스위치 설정을 위한 CLI 도구
 
 ## 개요
 
-`keti-tsn-cli`는 Microchip LAN9662 TSN 스위치와 통신하기 위한 독립적인 CLI 도구입니다.
+`keti-tsn-cli`는 Microchip TSN 스위치와 통신하기 위한 독립적인 CLI 도구입니다.
 `mvdct`(Microchip VelocityDRIVE CT CLI)의 핵심 기능을 JavaScript로 재구현하여, 오픈소스 기반의 유연한 TSN 설정 환경을 제공합니다.
 
 ## 주요 기능
 
-| 기능 | 설명 | 상태 |
-|------|------|------|
-| `list` | 캐시된 YANG 카탈로그 목록 | ✅ 완료 |
-| `checksum` | 장비 YANG 카탈로그 체크섬 조회 | ✅ 완료 |
-| `download` | YANG 카탈로그 다운로드 | ✅ 완료 |
-| `encode` | YAML → CBOR 변환 (오프라인) | ✅ 완료 |
-| `decode` | CBOR → YAML 변환 (오프라인) | ✅ 완료 |
-| `fetch` | 특정 설정값 조회 (iFETCH) | ✅ 완료 |
-| `patch` | 설정값 변경 (iPATCH) | ✅ 완료 |
-| `get` | 전체 설정 조회 (Block-wise GET) | ✅ 완료 |
+| 기능 | 설명 |
+|------|------|
+| `list` | 캐시된 YANG 카탈로그 목록 |
+| `checksum` | 장비 YANG 카탈로그 체크섬 조회 |
+| `download` | YANG 카탈로그 다운로드 |
+| `encode` | YAML → CBOR 변환 (오프라인) |
+| `decode` | CBOR → YAML 변환 (오프라인) |
+| `fetch` | 특정 설정값 조회 (iFETCH) |
+| `patch` | 설정값 변경 (iPATCH) |
+| `get` | 전체 설정 조회 (Block-wise GET) |
 
 ## 설치
 
@@ -136,28 +136,28 @@ keti-tsn-cli/
 ./scripts/download-yang-cache.sh <checksum>
 ```
 
-## 진행 상황
+## 변경 이력
 
 ### 2024-12-29
-- [x] `fetch` 명령 구현 (iFETCH with instance-identifier format)
-- [x] `patch` 명령 구현 (iPATCH with Delta-SID CBOR)
-- [x] iPATCH 이중 인코딩 버그 수정
-- [x] iFETCH: 전체 경로에서 키 수집하도록 수정
-- [x] 모든 명령어 구현 완료 및 테스트
+- `fetch` 명령 구현 (iFETCH with instance-identifier format)
+- `patch` 명령 구현 (iPATCH with Delta-SID CBOR)
+- iPATCH 이중 인코딩 버그 수정
+- iFETCH: 전체 경로에서 키 수집하도록 수정
+- 모든 명령어 구현 완료 및 테스트
 
 ### 2024-12-23
-- [x] tsc2cbor 리팩토링: `loadInputs` 중복 코드 제거 → `input-loader.js` 공통 모듈
-- [x] CLI 명령어 구조 변경: `yang id` → `checksum`, `yang download` → `download`, `yang list` → `list`
-- [x] `-d` 옵션으로 디바이스 지정 (기본값: `/dev/ttyACM0`)
-- [x] `keti-tsn` wrapper 스크립트 생성 (mvdct 스타일)
-- [x] YANG 캐시 다운로드 스크립트 추가
-- [x] `encode`/`decode` 명령 구현
-- [x] `get` 명령 구현 (Block-wise GET)
+- tsc2cbor 리팩토링: `loadInputs` 중복 코드 제거, `input-loader.js` 공통 모듈화
+- CLI 명령어 구조 변경: `yang id` → `checksum`, `yang download` → `download`, `yang list` → `list`
+- `-d` 옵션으로 디바이스 지정 (기본값: `/dev/ttyACM0`)
+- `keti-tsn` wrapper 스크립트 생성 (mvdct 스타일)
+- YANG 캐시 다운로드 스크립트 추가
+- `encode`/`decode` 명령 구현
+- `get` 명령 구현 (Block-wise GET)
 
 ### 2024-12-19
-- [x] 프로젝트 구조 생성
-- [x] tsc2cbor 라이브러리 통합
-- [x] 테스트 스크립트 구성
+- 프로젝트 구조 생성
+- tsc2cbor 라이브러리 통합
+- 테스트 스크립트 구성
 
 ## 라이선스
 
