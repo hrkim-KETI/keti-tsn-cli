@@ -52,7 +52,7 @@ class Tsc2CborConverter {
     }
 
     this.yangCacheDir = yangCacheDir;
-    this.sidTree = null;
+    this.sidInfo = null;
     this.typeTable = null;
     this.cacheLoaded = false;
   }
@@ -64,8 +64,8 @@ class Tsc2CborConverter {
   async loadInputs(verbose = false) {
     if (this.cacheLoaded) return;
 
-    const { sidTree, typeTable } = await loadYangInputs(this.yangCacheDir, verbose);
-    this.sidTree = sidTree;
+    const { sidInfo, typeTable } = await loadYangInputs(this.yangCacheDir, verbose);
+    this.sidInfo = sidInfo;
     this.typeTable = typeTable;
     this.cacheLoaded = true;
   }
@@ -134,7 +134,7 @@ class Tsc2CborConverter {
         console.log('Direct transformation: Instance-ID -> Delta-SID Object...');
       }
 
-      transformed = transformInstanceIdentifier(jsonData, this.typeTable, this.sidTree, {
+      transformed = transformInstanceIdentifier(jsonData, this.typeTable, this.sidInfo, {
         useMap: true,
         sortMode,
         verbose
@@ -153,7 +153,7 @@ class Tsc2CborConverter {
         console.log('Transformation: JSON -> Delta-SID Object...');
       }
 
-      transformed = transform(jsonData, this.typeTable, this.sidTree, {
+      transformed = transform(jsonData, this.typeTable, this.sidInfo, {
         useDeltaSid: true,
         rootPath: '',
         useMap: true,

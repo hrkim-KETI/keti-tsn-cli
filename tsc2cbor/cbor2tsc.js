@@ -41,7 +41,7 @@ class Cbor2TscConverter {
     }
 
     this.yangCacheDir = yangCacheDir;
-    this.sidTree = null;
+    this.sidInfo = null;
     this.typeTable = null;
     this.cacheLoaded = false;
   }
@@ -53,8 +53,8 @@ class Cbor2TscConverter {
   async loadInputs(verbose = false) {
     if (this.cacheLoaded) return;
 
-    const { sidTree, typeTable } = await loadYangInputs(this.yangCacheDir, verbose);
-    this.sidTree = sidTree;
+    const { sidInfo, typeTable } = await loadYangInputs(this.yangCacheDir, verbose);
+    this.sidInfo = sidInfo;
     this.typeTable = typeTable;
     this.cacheLoaded = true;
   }
@@ -121,7 +121,7 @@ class Cbor2TscConverter {
         console.log('\nDetransformation: Delta-SID -> Instance-Identifier...');
       }
 
-      const instanceIdEntries = detransformToInstanceId(decoded, this.typeTable, this.sidTree);
+      const instanceIdEntries = detransformToInstanceId(decoded, this.typeTable, this.sidInfo);
 
       if (verbose) {
         console.log(`  Instance-ID entries: ${instanceIdEntries.length}`);
@@ -158,7 +158,7 @@ class Cbor2TscConverter {
       }
 
       // Step 2: Detransform Delta-SID → Nested JSON
-      const flat = detransform(decoded, this.typeTable, this.sidTree);
+      const flat = detransform(decoded, this.typeTable, this.sidInfo);
       const nested = skipNesting ? flat : flat;  // detransform already nests
 
       const detransformStats = getDetransformStats(decoded, nested);

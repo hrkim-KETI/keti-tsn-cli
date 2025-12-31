@@ -17,11 +17,11 @@ import { resolveIdentityToSid } from '../common/sid-resolver.js';
  * Encode value based on YANG type information
  * @param {*} value - Value to encode
  * @param {object} typeInfo - Type information from yang-type-extractor
- * @param {object} sidTree - SID tree from sid-resolver (for identity resolution)
+ * @param {object} sidInfo - SID tree from sid-resolver (for identity resolution)
  * @param {boolean} isUnion - Whether this is inside a union context
  * @returns {*} Encoded value suitable for CBOR (may include Tags)
  */
-export function encodeValue(value, typeInfo, sidTree = null, isUnion = false) {
+export function encodeValue(value, typeInfo, sidInfo = null, isUnion = false) {
   // Handle null/undefined
   if (value === null || value === undefined) {
     return null;
@@ -39,7 +39,7 @@ export function encodeValue(value, typeInfo, sidTree = null, isUnion = false) {
       return encodeEnum(value, typeInfo, isUnion);
 
     case 'identityref':
-      return encodeIdentity(value, typeInfo, sidTree, isUnion);
+      return encodeIdentity(value, typeInfo, sidInfo, isUnion);
 
     case 'decimal64':
       return encodeDecimal64(value, typeInfo);
@@ -82,7 +82,7 @@ export function encodeValue(value, typeInfo, sidTree = null, isUnion = false) {
       return null; // RFC 9254: empty type is encoded as null
 
     case 'union':
-      return encodeUnion(value, typeInfo, sidTree);
+      return encodeUnion(value, typeInfo, sidInfo);
 
     default:
       // Unknown type - auto-detect
@@ -128,22 +128,22 @@ function encodeEnum(value, typeInfo, isUnion = false) {
  * Encode identity value with optional Tag(45) for union context
  * @param {string|number} value - Identity name or SID
  * @param {object} typeInfo - Type information with base identity
- * @param {object} sidTree - SID tree for identity→SID resolution
+ * @param {object} sidInfo - SID tree for identity→SID resolution
  * @param {boolean} isUnion - Whether in union context
  * @returns {number|Tag} Identity SID or Tag(45, SID)
  */
-function encodeIdentity(value, typeInfo, sidTree, isUnion = false) {
+function encodeIdentity(value, typeInfo, sidInfo, isUnion = false) {
   let sid;
 
   if (typeof value === 'number') {
     sid = value;
   } else if (typeof value === 'string') {
-    if (!sidTree) {
+    if (!sidInfo) {
       throw new Error('SID tree required for identity resolution');
     }
 
     // Resolve identity name → SID
-    sid = resolveIdentityToSid(value, sidTree);
+    sid = resolveIdentityToSid(value, sidInfo);
 
     if (sid === null) {
       throw new Error(`Identity "${value}" not found in SID tree`);
@@ -230,10 +230,10 @@ function encodeBits(value, typeInfo) {
  * Union types need special handling - must detect actual type and apply appropriate Tag
  * @param {*} value - Union value
  * @param {object} typeInfo - Type information with unionTypes
- * @param {object} sidTree - SID tree
+ * @param {object} sidInfo - SID tree
  * @returns {*} Encoded value with appropriate Tag
  */
-function encodeUnion(value, typeInfo, sidTree) {
+function encodeUnion(value, typeInfo, sidInfo) {
   if (!typeInfo.unionTypes || typeInfo.unionTypes.length === 0) {
     return autoEncodeValue(value);
   }
@@ -242,7 +242,7 @@ function encodeUnion(value, typeInfo, sidTree) {
   for (const unionType of typeInfo.unionTypes) {
     try {
       // Attempt to encode with isUnion=true for Tag wrapping
-      return encodeValue(value, unionType, sidTree, true);
+      return encodeValue(value, unionType, sidInfo, true);
     } catch (err) {
       // Try next type
       continue;
@@ -346,11 +346,11 @@ function autoEncodeValue(value) {
  * Encode object values recursively with type information
  * @param {object} obj - Object with values to encode
  * @param {object} typeTable - Type table from yang-type-extractor
- * @param {object} sidTree - SID tree from sid-resolver
+ * @param {object} sidInfo - SID tree from sid-resolver
  * @param {string} currentPath - Current YANG path (for nested objects)
  * @returns {object} Object with encoded values
  */
-export function encodeObjectValues(obj, typeTable = {}, sidTree = null, currentPath = '') {
+export function encodeObjectValues(obj, typeTable = {}, sidInfo = null, currentPath = '') {
   const encoded = {};
 
   for (const [key, value] of Object.entries(obj)) {
@@ -359,17 +359,17 @@ export function encodeObjectValues(obj, typeTable = {}, sidTree = null, currentP
 
     if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
       // Recursively encode nested objects
-      encoded[key] = encodeObjectValues(value, typeTable, sidTree, yangPath);
+      encoded[key] = encodeObjectValues(value, typeTable, sidInfo, yangPath);
     } else if (Array.isArray(value)) {
       // Encode array elements
       encoded[key] = value.map(v =>
         typeof v === 'object' && v !== null
-          ? encodeObjectValues(v, typeTable, sidTree, yangPath)
-          : encodeValue(v, typeInfo, sidTree, false)
+          ? encodeObjectValues(v, typeTable, sidInfo, yangPath)
+          : encodeValue(v, typeInfo, sidInfo, false)
       );
     } else {
       // Encode primitive value
-      encoded[key] = encodeValue(value, typeInfo, sidTree, false);
+      encoded[key] = encodeValue(value, typeInfo, sidInfo, false);
     }
   }
 
