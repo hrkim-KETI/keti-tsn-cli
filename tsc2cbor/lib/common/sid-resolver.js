@@ -1,7 +1,7 @@
 /**
  * SID Resolver Module
  *
- * Builds SID path tree and resolves YANG paths to SIDs
+ * Builds SID info and resolves YANG paths to SIDs
  * Supports Delta-SID encoding (RFC 9254)
  * Optimized for fast searching with Map data structure
  */
@@ -9,11 +9,11 @@
 import fs from 'fs';
 
 /**
- * Build SID path tree from .sid file
+ * Build SID info from .sid file
  * @param {string} sidFilePath - Path to .sid JSON file
- * @returns {Promise<object>} SID path tree with Maps for fast lookup
+ * @returns {Promise<object>} SID info with Maps for fast lookup
  */
-export async function buildSidTree(sidFilePath) {
+export async function buildSidInfo(sidFilePath) {
   try {
     const content = await fs.promises.readFile(sidFilePath, 'utf8');
     const sidData = JSON.parse(content); // Object
@@ -21,7 +21,7 @@ export async function buildSidTree(sidFilePath) {
     // Support both RFC format and simplified format
     const sidFile = sidData['ietf-sid-file:sid-file'] || sidData; // Object
 
-    const tree = {
+    const info = {
       // BiMap: Path ↔ SID (양방향)
       pathToSid: new Map(),     // YANG path → SID (encoding)
       sidToPath: new Map(),     // SID → YANG path (decoding)
@@ -45,15 +45,15 @@ export async function buildSidTree(sidFilePath) {
 
     // Process all items
     items.forEach(item => {
-      processSidItem(item, tree);
+      processSidItem(item, info);
     });
 
     // NOTE: nodeInfo (parent-child relationships) are NOT calculated here
     // because augmentation parents may be in different .sid files.
     // Parent calculation must be done AFTER merging all modules.
-    // See: mergeSidTrees() or caller's Recalculate step.
+    // See: mergeSidInfos() or caller's Recalculate step.
 
-    return tree;
+    return info;
 
   } catch (error) {
     throw new Error(`SID file parsing error: ${error.message}`);
@@ -63,9 +63,9 @@ export async function buildSidTree(sidFilePath) {
 /**
  * Process a single SID item
  * @param {object} item - SID item from .sid file
- * @param {object} tree - SID tree to populate
+ * @param {object} info - SID info to populate
  */
-function processSidItem(item, tree) {
+function processSidItem(item, info) {
   const sid = item.sid;
   const namespace = item.namespace || 'data';
   const identifier = item.identifier || '';
@@ -90,11 +90,11 @@ function processSidItem(item, tree) {
       prefixedPath = `identity:${identifier}`;
 
       // BiMap: name → SID (encoding)
-      tree.identityToSid.set(identityName, sid);
-      tree.identityToSid.set(identifier, sid); // Also store full identifier
+      info.identityToSid.set(identityName, sid);
+      info.identityToSid.set(identifier, sid); // Also store full identifier
 
       // BiMap: SID → name (decoding)
-      tree.sidToIdentity.set(sid, identityName);
+      info.sidToIdentity.set(sid, identityName);
       break;
 
     case 'feature':
@@ -128,47 +128,47 @@ function processSidItem(item, tree) {
     const parts = yangPath.split('/');
     const leaf = parts[parts.length - 1];
     if (leaf) {
-      if (!tree.leafToPaths.has(leaf)) {
-        tree.leafToPaths.set(leaf, []);
+      if (!info.leafToPaths.has(leaf)) {
+        info.leafToPaths.set(leaf, []);
       }
-      tree.leafToPaths.get(leaf).push(yangPath);
+      info.leafToPaths.get(leaf).push(yangPath);
     }
   }
 
   // Store in both directions for fast lookup
-  tree.pathToSid.set(yangPath, sid);
-  tree.sidToPath.set(sid, yangPath);
+  info.pathToSid.set(yangPath, sid);
+  info.sidToPath.set(sid, yangPath);
 
   if (prefixedPath) {
-    tree.prefixedPathToSid.set(prefixedPath, sid);
-    tree.sidToPrefixedPath.set(sid, prefixedPath);
-    tree.pathToPrefixed.set(yangPath, prefixedPath);
+    info.prefixedPathToSid.set(prefixedPath, sid);
+    info.sidToPrefixedPath.set(sid, prefixedPath);
+    info.pathToPrefixed.set(yangPath, prefixedPath);
   }
 }
 
 /**
  * Resolve YANG path to SID with fuzzy matching for choice/case.
  * @param {string} path - The current path segment (JSON key)
- * @param {object} sidTree - SID tree from buildSidTree()
+ * @param {object} sidInfo - SID info from buildSidInfo()
  * @param {string} [contextPath=''] - The parent path context.
  * @returns {number|null} SID number or null if not found
  */
-export function resolvePathToSid(path, sidTree, contextPath = '') {
+export function resolvePathToSid(path, sidInfo, contextPath = '') {
   const fullPath = contextPath ? `${contextPath}/${path}` : path;
 
   // 1. Direct lookup (most common case)
-  if (sidTree.prefixedPathToSid?.has(fullPath)) {
-    return sidTree.prefixedPathToSid.get(fullPath);
+  if (sidInfo.prefixedPathToSid?.has(fullPath)) {
+    return sidInfo.prefixedPathToSid.get(fullPath);
   }
   const fullPathStripped = stripPrefixes(fullPath);
-  if (sidTree.pathToSid.has(fullPathStripped)) {
-    return sidTree.pathToSid.get(fullPathStripped);
+  if (sidInfo.pathToSid.has(fullPathStripped)) {
+    return sidInfo.pathToSid.get(fullPathStripped);
   }
 
   // 2. Fuzzy match fallback for choice/case nodes absent in YAML
   // Uses pre-built leafToPaths index for performance.
   const pathStripped = stripPrefixes(path);
-  const candidatePaths = sidTree.leafToPaths?.get(pathStripped);
+  const candidatePaths = sidInfo.leafToPaths?.get(pathStripped);
 
   if (!candidatePaths || candidatePaths.length === 0) {
     return null;
@@ -176,7 +176,7 @@ export function resolvePathToSid(path, sidTree, contextPath = '') {
 
   // If only one candidate, it's likely the correct one.
   if (candidatePaths.length === 1) {
-    return sidTree.pathToSid.get(candidatePaths[0]);
+    return sidInfo.pathToSid.get(candidatePaths[0]);
   }
 
   // Multiple candidates, find best match using context.
@@ -205,21 +205,21 @@ export function resolvePathToSid(path, sidTree, contextPath = '') {
   }
 
   if (bestMatch) {
-    return sidTree.pathToSid.get(bestMatch);
+    return sidInfo.pathToSid.get(bestMatch);
   }
 
   // If no context match, return first candidate as a last resort
-  return sidTree.pathToSid.get(candidatePaths[0]);
+  return sidInfo.pathToSid.get(candidatePaths[0]);
 }
 
 /**
  * Resolve SID to YANG path (reverse lookup)
  * @param {number} sid - SID number
- * @param {object} sidTree - SID tree from buildSidTree()
+ * @param {object} sidInfo - SID info from buildSidInfo()
  * @returns {string|null} YANG path or null if not found
  */
-export function resolveSidToPath(sid, sidTree) {
-  return sidTree.sidToPath.get(sid) || null;
+export function resolveSidToPath(sid, sidInfo) {
+  return sidInfo.sidToPath.get(sid) || null;
 }
 
 /**
@@ -236,13 +236,13 @@ function stripPrefixes(path) {
 }
 
 /**
- * Augment SID tree with alias paths derived from choice/case information
- * @param {object} sidTree
+ * Augment SID info with alias paths derived from choice/case information
+ * @param {object} sidInfo
  * @param {Set<string>} choiceNames
  * @param {Set<string>} caseNames
  */
-export function augmentSidTreeWithAliases(sidTree, choiceNames = new Set(), caseNames = new Set()) {
-  if (!sidTree || sidTree._aliasesAugmented) {
+export function augmentSidInfoWithAliases(sidInfo, choiceNames = new Set(), caseNames = new Set()) {
+  if (!sidInfo || sidInfo._aliasesAugmented) {
     return;
   }
 
@@ -301,50 +301,50 @@ export function augmentSidTreeWithAliases(sidTree, choiceNames = new Set(), case
     return aliasPath && aliasPath !== prefixedPath ? aliasPath : null;
   };
 
-  for (const [sid, canonicalPrefixed] of sidTree.sidToPrefixedPath) {
+  for (const [sid, canonicalPrefixed] of sidInfo.sidToPrefixedPath) {
     const aliasPrefixed = buildAlias(canonicalPrefixed);
     if (!aliasPrefixed) continue;
 
-    if (!sidTree.prefixedPathToSid.has(aliasPrefixed)) {
-      sidTree.prefixedPathToSid.set(aliasPrefixed, sid);
+    if (!sidInfo.prefixedPathToSid.has(aliasPrefixed)) {
+      sidInfo.prefixedPathToSid.set(aliasPrefixed, sid);
     }
 
     const aliasStripped = stripPrefixes(aliasPrefixed);
-    const existingSid = sidTree.pathToSid.get(aliasStripped);
+    const existingSid = sidInfo.pathToSid.get(aliasStripped);
     if (existingSid === undefined) {
-      sidTree.pathToSid.set(aliasStripped, sid);
-      sidTree.pathToPrefixed.set(aliasStripped, aliasPrefixed);
+      sidInfo.pathToSid.set(aliasStripped, sid);
+      sidInfo.pathToPrefixed.set(aliasStripped, aliasPrefixed);
     } else if (existingSid === sid) {
       // already mapped to same SID; no action
     }
   }
 
-  sidTree._aliasesAugmented = true;
+  sidInfo._aliasesAugmented = true;
 }
 
 /**
  * Resolve identity name to SID (encoding)
  * @param {string} identityName - Identity name (e.g., "ethernetCsmacd")
- * @param {object} sidTree - SID tree from buildSidTree()
+ * @param {object} sidInfo - SID info from buildSidInfo()
  * @returns {number|null} SID number or null if not found
  */
-export function resolveIdentityToSid(identityName, sidTree) {
+export function resolveIdentityToSid(identityName, sidInfo) {
   // Remove namespace prefix if present
   const cleanName = identityName.includes(':')
     ? identityName.split(':')[1]
     : identityName;
 
-  return sidTree.identityToSid.get(cleanName) || null;
+  return sidInfo.identityToSid.get(cleanName) || null;
 }
 
 /**
  * Resolve SID to identity name (decoding)
  * @param {number} sid - SID number
- * @param {object} sidTree - SID tree from buildSidTree()
+ * @param {object} sidInfo - SID info from buildSidInfo()
  * @returns {string|null} Identity name or null if not found
  */
-export function resolveSidToIdentity(sid, sidTree) {
-  return sidTree.sidToIdentity.get(sid) || null;
+export function resolveSidToIdentity(sid, sidInfo) {
+  return sidInfo.sidToIdentity.get(sid) || null;
 }
 
 /**
@@ -364,13 +364,13 @@ export function jsonPathToYangPath(jsonPath) {
 
 /**
  * Get all SID paths for debugging
- * @param {object} sidTree - SID tree
+ * @param {object} sidInfo - SID info
  * @returns {Array} Array of {path, sid} objects, sorted by SID
  */
-export function getAllSidPaths(sidTree) {
+export function getAllSidPaths(sidInfo) {
   const paths = [];
 
-  for (const [path, sid] of sidTree.pathToSid) {
+  for (const [path, sid] of sidInfo.pathToSid) {
     paths.push({ path, sid });
   }
 
@@ -381,17 +381,17 @@ export function getAllSidPaths(sidTree) {
 }
 
 /**
- * Get statistics about SID tree
- * @param {object} sidTree - SID tree
+ * Get statistics about SID info
+ * @param {object} sidInfo - SID info
  * @returns {object} Statistics
  */
-export function getSidTreeStats(sidTree) {
+export function getSidInfoStats(sidInfo) {
   return {
-    totalPaths: sidTree.pathToSid.size,
-    totalIdentities: sidTree.identityToSid.size,
+    totalPaths: sidInfo.pathToSid.size,
+    totalIdentities: sidInfo.identityToSid.size,
     sidRange: {
-      min: Math.min(...sidTree.sidToPath.keys()),
-      max: Math.max(...sidTree.sidToPath.keys())
+      min: Math.min(...sidInfo.sidToPath.keys()),
+      max: Math.max(...sidInfo.sidToPath.keys())
     }
   };
 }
@@ -399,7 +399,7 @@ export function getSidTreeStats(sidTree) {
 /**
  * Load multiple SID files and merge
  * @param {string[]} sidFilePaths - Array of .sid file paths
- * @returns {Promise<object>} Merged SID tree
+ * @returns {Promise<object>} Merged SID info
  */
 export async function loadMultipleSidFiles(sidFilePaths) {
   const merged = {
@@ -422,49 +422,47 @@ export async function loadMultipleSidFiles(sidFilePaths) {
   };
 
   // Load all SID files in parallel
-  const trees = await Promise.all(sidFilePaths.map(filePath => buildSidTree(filePath)));
+  const sidInfos = await Promise.all(sidFilePaths.map(filePath => buildSidInfo(filePath)));
 
-  trees.forEach(tree => {
-    const filePath = null; // Not needed for merging
-
+  sidInfos.forEach(info => {
     // Merge BiMap: Path ↔ SID
-    for (const [path, sid] of tree.pathToSid) {
+    for (const [path, sid] of info.pathToSid) {
       merged.pathToSid.set(path, sid);
     }
-    for (const [sid, path] of tree.sidToPath) {
+    for (const [sid, path] of info.sidToPath) {
       merged.sidToPath.set(sid, path);
     }
-    for (const [prefixedPath, sid] of tree.prefixedPathToSid) {
+    for (const [prefixedPath, sid] of info.prefixedPathToSid) {
       merged.prefixedPathToSid.set(prefixedPath, sid);
     }
-    for (const [sid, prefixedPath] of tree.sidToPrefixedPath) {
+    for (const [sid, prefixedPath] of info.sidToPrefixedPath) {
       merged.sidToPrefixedPath.set(sid, prefixedPath);
     }
-    for (const [strippedPath, prefixedPath] of tree.pathToPrefixed) {
+    for (const [strippedPath, prefixedPath] of info.pathToPrefixed) {
       merged.pathToPrefixed.set(strippedPath, prefixedPath);
     }
 
     // Merge BiMap: Identity ↔ SID
-    for (const [name, sid] of tree.identityToSid) {
+    for (const [name, sid] of info.identityToSid) {
       merged.identityToSid.set(name, sid);
     }
-    for (const [sid, name] of tree.sidToIdentity) {
+    for (const [sid, name] of info.sidToIdentity) {
       merged.sidToIdentity.set(sid, name);
     }
 
     // Merge nodeInfo
-    for (const [path, info] of tree.nodeInfo) {
-      merged.nodeInfo.set(path, info);
+    for (const [path, nodeData] of info.nodeInfo) {
+      merged.nodeInfo.set(path, nodeData);
     }
 
     // Merge leafToPaths index
-    for (const [leaf, paths] of tree.leafToPaths) {
+    for (const [leaf, paths] of info.leafToPaths) {
       const existing = merged.leafToPaths.get(leaf) || [];
       merged.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]);
     }
   });
 
-  // Recalculate parent relationships for merged tree
+  // Recalculate parent relationships for merged info
   // This is necessary because parent might be from a different module
   for (const [path, sid] of merged.pathToSid) {
     if (path.startsWith('identity:') || path.startsWith('feature:')) {

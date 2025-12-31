@@ -16,13 +16,13 @@ import { Tag } from 'cbor-x';
  * Decode CBOR value to original YANG value
  * @param {*} cborValue - CBOR encoded value
  * @param {object} typeInfo - Type information from yang-type-extractor
- * @param {object} sidTree - SID tree for identity resolution
+ * @param {object} sidInfo - SID tree for identity resolution
  * @param {boolean} isUnion - Whether this is inside a union type
  * @param {object} typeTable - Type table for typedef resolution (optional)
  * @param {string} yangPath - YANG path for error reporting (optional)
  * @returns {*} Decoded value
  */
-export function decodeValue(cborValue, typeInfo, sidTree = null, isUnion = false, typeTable = null, yangPath = null) {
+export function decodeValue(cborValue, typeInfo, sidInfo = null, isUnion = false, typeTable = null, yangPath = null) {
   if (!typeInfo || !typeInfo.type) {
     return cborValue; // No type info, return as-is
   }
@@ -48,7 +48,7 @@ export function decodeValue(cborValue, typeInfo, sidTree = null, isUnion = false
       return decodeEnum(cborValue, resolvedTypeInfo, isUnion, yangPath);
 
     case 'identityref':
-      return decodeIdentity(cborValue, resolvedTypeInfo, sidTree, isUnion);
+      return decodeIdentity(cborValue, resolvedTypeInfo, sidInfo, isUnion);
 
     case 'decimal64':
       return decodeDecimal64(cborValue);
@@ -57,7 +57,7 @@ export function decodeValue(cborValue, typeInfo, sidTree = null, isUnion = false
       return decodeBits(cborValue, resolvedTypeInfo);
 
     case 'union':
-      return decodeUnion(cborValue, resolvedTypeInfo, sidTree, typeTable, yangPath);
+      return decodeUnion(cborValue, resolvedTypeInfo, sidInfo, typeTable, yangPath);
 
     case 'binary':
       return decodeBinary(cborValue);
@@ -90,7 +90,7 @@ export function decodeValue(cborValue, typeInfo, sidTree = null, isUnion = false
       }
       if (resolvedTypeInfo.base) {
         // Has base identity - treat as identityref
-        return decodeIdentity(cborValue, resolvedTypeInfo, sidTree, isUnion);
+        return decodeIdentity(cborValue, resolvedTypeInfo, sidInfo, isUnion);
       }
 
       // Unknown type or primitive - return as-is
@@ -148,23 +148,23 @@ function decodeEnum(cborValue, typeInfo, isUnion, yangPath = null) {
  * Decode identity SID to identity name
  * @param {number|Tag} cborValue - Identity SID (number or Tag(45))
  * @param {object} typeInfo - Type info with identity base
- * @param {object} sidTree - SID tree with sidToIdentity map
+ * @param {object} sidInfo - SID tree with sidToIdentity map
  * @param {boolean} isUnion - Whether inside union
  * @returns {string} Identity name
  */
-function decodeIdentity(cborValue, typeInfo, sidTree, isUnion) {
+function decodeIdentity(cborValue, typeInfo, sidInfo, isUnion) {
   // Extract SID from Tag(45) if in union
   let sid = cborValue;
   if (isUnion && cborValue instanceof Tag && cborValue.tag === 45) {
     sid = cborValue.value;
   }
 
-  if (!sidTree || !sidTree.sidToIdentity) {
+  if (!sidInfo || !sidInfo.sidToIdentity) {
     throw new Error('SID tree missing sidToIdentity map');
   }
 
   // Use BiMap: SID → identity name
-  const identityName = sidTree.sidToIdentity.get(sid);
+  const identityName = sidInfo.sidToIdentity.get(sid);
   if (!identityName) {
     throw new Error(`Identity SID ${sid} not found in SID tree`);
   }
@@ -259,12 +259,12 @@ function decodeBinary(cborValue) {
  * Decode union type by checking CBOR Tag
  * @param {*} cborValue - CBOR value (may have Tag 44 or 45)
  * @param {object} typeInfo - Union type info
- * @param {object} sidTree - SID tree
+ * @param {object} sidInfo - SID tree
  * @param {object} typeTable - Type table for typedef resolution
  * @param {string} yangPath - YANG path for error reporting
  * @returns {*} Decoded value
  */
-function decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath = null) {
+function decodeUnion(cborValue, typeInfo, sidInfo, typeTable, yangPath = null) {
   // Check for union-specific tags
   if (cborValue instanceof Tag) {
     if (cborValue.tag === 44) {
@@ -279,7 +279,7 @@ function decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath = null) {
       // Tag(45) = identity in union
       for (const memberType of typeInfo.unionTypes || typeInfo.types || []) {
         if (memberType.type === 'identityref' || memberType.base) {
-          return decodeIdentity(cborValue, memberType, sidTree, true);
+          return decodeIdentity(cborValue, memberType, sidInfo, true);
         }
       }
     }
@@ -289,7 +289,7 @@ function decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath = null) {
   if (typeInfo.unionTypes && Array.isArray(typeInfo.unionTypes)) {
     for (const memberType of typeInfo.unionTypes) {
       try {
-        return decodeValue(cborValue, memberType, sidTree, true, typeTable, yangPath);
+        return decodeValue(cborValue, memberType, sidInfo, true, typeTable, yangPath);
       } catch (err) {
         // Try next type
         continue;
@@ -298,7 +298,7 @@ function decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath = null) {
   } else if (typeInfo.types && Array.isArray(typeInfo.types)) {
     for (const memberType of typeInfo.types) {
       try {
-        return decodeValue(cborValue, memberType, sidTree, true, typeTable, yangPath);
+        return decodeValue(cborValue, memberType, sidInfo, true, typeTable, yangPath);
       } catch (err) {
         // Try next type
         continue;
@@ -314,17 +314,17 @@ function decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath = null) {
  * Decode object values based on type information
  * @param {object} sidObject - Object with SID keys and CBOR values
  * @param {object} typeTable - Type table from yang-type-extractor
- * @param {object} sidTree - SID tree for path resolution
+ * @param {object} sidInfo - SID tree for path resolution
  * @returns {object} Object with YANG paths and decoded values
  */
-export function decodeObjectValues(sidObject, typeTable, sidTree) {
+export function decodeObjectValues(sidObject, typeTable, sidInfo) {
   const decoded = {};
 
   for (const [sidKey, cborValue] of Object.entries(sidObject)) {
     const sid = Number(sidKey);
 
     // Step 1: SID → YANG path (use BiMap)
-    const yangPath = sidTree.sidToPath.get(sid);
+    const yangPath = sidInfo.sidToPath.get(sid);
     if (!yangPath) {
       console.warn(`No YANG path found for SID ${sid}`);
       decoded[sid] = cborValue; // Keep as SID
@@ -336,7 +336,7 @@ export function decodeObjectValues(sidObject, typeTable, sidTree) {
 
     // Step 3: Decode value based on TypeInfo
     const decodedValue = typeInfo
-      ? decodeValue(cborValue, typeInfo, sidTree, false)
+      ? decodeValue(cborValue, typeInfo, sidInfo, false)
       : cborValue;
 
     decoded[yangPath] = decodedValue;

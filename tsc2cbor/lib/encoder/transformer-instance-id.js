@@ -80,20 +80,20 @@ function buildYangPath(components, upToIndex = -1) {
 }
 
 /**
- * Resolve path to SID using sidTree
+ * Resolve path to SID using sidInfo
  * @param {string} prefixedPath - Prefixed YANG path
  * @param {string} strippedPath - Stripped YANG path
- * @param {Object} sidTree - SID tree
+ * @param {Object} sidInfo - SID tree
  * @returns {number|null} SID or null
  */
-function resolveSid(prefixedPath, strippedPath, sidTree) {
+function resolveSid(prefixedPath, strippedPath, sidInfo) {
   // Try prefixed path first
-  if (sidTree.prefixedPathToSid?.has(prefixedPath)) {
-    return sidTree.prefixedPathToSid.get(prefixedPath);
+  if (sidInfo.prefixedPathToSid?.has(prefixedPath)) {
+    return sidInfo.prefixedPathToSid.get(prefixedPath);
   }
   // Fall back to stripped path
-  if (sidTree.pathToSid?.has(strippedPath)) {
-    return sidTree.pathToSid.get(strippedPath);
+  if (sidInfo.pathToSid?.has(strippedPath)) {
+    return sidInfo.pathToSid.get(strippedPath);
   }
   return null;
 }
@@ -101,11 +101,11 @@ function resolveSid(prefixedPath, strippedPath, sidTree) {
 /**
  * Get node info for Delta-SID calculation
  * @param {string} strippedPath - Stripped YANG path
- * @param {Object} sidTree - SID tree
+ * @param {Object} sidInfo - SID tree
  * @returns {Object|null} Node info with parent and deltaSid
  */
-function getNodeInfo(strippedPath, sidTree) {
-  return sidTree.nodeInfo?.get(strippedPath) || null;
+function getNodeInfo(strippedPath, sidInfo) {
+  return sidInfo.nodeInfo?.get(strippedPath) || null;
 }
 
 /**
@@ -113,11 +113,11 @@ function getNodeInfo(strippedPath, sidTree) {
  *
  * @param {Array<Object>} instanceIdArray - Array of { "/path": value } objects
  * @param {Object} typeTable - Type table from yang-type-extractor
- * @param {Object} sidTree - SID tree from sid-resolver
+ * @param {Object} sidInfo - SID tree from sid-resolver
  * @param {Object} options - Options
  * @returns {Map} CBOR-ready Map with Delta-SID keys
  */
-export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree, options = {}) {
+export function transformInstanceIdentifier(instanceIdArray, typeTable, sidInfo, options = {}) {
   const useMap = options.useMap !== false;
   const sortMode = options.sortMode || 'velocity';
   const verbose = options.verbose || false;
@@ -181,7 +181,7 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
       const { prefixedPath, strippedPath } = buildYangPath(components, i);
 
       // Get SID for this path segment
-      const currentSid = resolveSid(prefixedPath, strippedPath, sidTree);
+      const currentSid = resolveSid(prefixedPath, strippedPath, sidInfo);
 
       if (currentSid === null) {
         if (verbose) {
@@ -191,7 +191,7 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
       }
 
       // Calculate key (Delta-SID or Absolute-SID)
-      const nodeInfo = getNodeInfo(strippedPath, sidTree);
+      const nodeInfo = getNodeInfo(strippedPath, sidInfo);
       let encodedKey;
 
       if (nodeInfo && nodeInfo.parent !== null && nodeInfo.parent === parentSid) {
@@ -218,12 +218,12 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
           for (const { keyName, keyValue } of comp.keys) {
             // Find key SID
             const keyPath = `${strippedPath}/${keyName}`;
-            const keySid = sidTree.pathToSid?.get(keyPath);
+            const keySid = sidInfo.pathToSid?.get(keyPath);
 
             if (keySid === null) continue;
 
             // Calculate key's Delta-SID
-            const keyNodeInfo = getNodeInfo(keyPath, sidTree);
+            const keyNodeInfo = getNodeInfo(keyPath, sidInfo);
             let keyEncodedKey;
             if (keyNodeInfo && keyNodeInfo.parent === currentSid) {
               keyEncodedKey = keyNodeInfo.deltaSid;
@@ -249,11 +249,11 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
 
           for (const { keyName, keyValue } of comp.keys) {
             const keyPath = `${strippedPath}/${keyName}`;
-            const keySid = sidTree.pathToSid?.get(keyPath);
+            const keySid = sidInfo.pathToSid?.get(keyPath);
 
             if (keySid === null) continue;
 
-            const keyNodeInfo = getNodeInfo(keyPath, sidTree);
+            const keyNodeInfo = getNodeInfo(keyPath, sidInfo);
             let keyEncodedKey;
             if (keyNodeInfo && keyNodeInfo.parent === currentSid) {
               keyEncodedKey = keyNodeInfo.deltaSid;
@@ -264,7 +264,7 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
             // Encode key value (usually string)
             const keyTypeInfo = typeTable.types?.get(keyPath);
             const encodedKeyValue = keyTypeInfo
-              ? encodeValue(keyValue, keyTypeInfo, sidTree, false)
+              ? encodeValue(keyValue, keyTypeInfo, sidInfo, false)
               : keyValue;
 
             setInMap(listEntry, keyEncodedKey, encodedKeyValue);
@@ -279,7 +279,7 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidTree,
         // Leaf node - set value
         const typeInfo = typeTable.types?.get(strippedPath);
         const encodedValue = typeInfo
-          ? encodeValue(value, typeInfo, sidTree, false)
+          ? encodeValue(value, typeInfo, sidInfo, false)
           : value;
 
         setInMap(currentMap, encodedKey, encodedValue);
@@ -355,7 +355,7 @@ export function isInstanceIdentifierFormat(data) {
  * Each path becomes a separate CBOR-encodable entry.
  *
  * @param {Array<Object>} instanceIdArray - Array of { "/path": value } objects
- * @param {Object} sidTree - SID tree from sid-resolver
+ * @param {Object} sidInfo - SID tree from sid-resolver
  * @param {Object} options - Options
  * @returns {Array} Array of SID entries (each entry is either a number or [sid, key1, key2, ...])
  *
@@ -366,7 +366,7 @@ export function isInstanceIdentifierFormat(data) {
  * // Input: [{ "/ietf-constrained-yang-library:yang-library/checksum": null }]
  * // Output: [29304] (just SID for non-list)
  */
-export function extractSidsFromInstanceIdentifier(instanceIdArray, sidTree, options = {}) {
+export function extractSidsFromInstanceIdentifier(instanceIdArray, sidInfo, options = {}) {
   const verbose = options.verbose || false;
   const entries = [];
 
@@ -385,7 +385,7 @@ export function extractSidsFromInstanceIdentifier(instanceIdArray, sidTree, opti
     const { prefixedPath, strippedPath } = buildYangPath(components, -1);
 
     // Get the SID for the target (last) path element
-    const sid = resolveSid(prefixedPath, strippedPath, sidTree);
+    const sid = resolveSid(prefixedPath, strippedPath, sidInfo);
 
     if (sid === null) {
       if (verbose) {

@@ -35,10 +35,10 @@ Shared utilities used by both encoder and decoder.
 **Purpose**: YANG path ↔ SID mapping resolution
 
 **Key Functions**:
-- `buildSidTree(sidFile)` - Parse .sid file into BiMap structure
-- `resolvePathToSid(localName, sidTree, currentPath)` - Find SID for YANG path
-- `resolveIdentityToSid(identityName, sidTree)` - Find SID for identity
-- `augmentSidTreeWithAliases(sidTree, choiceNames, caseNames)` - Add choice/case aliases
+- `buildSidInfo(sidFile)` - Parse .sid file into BiMap structure
+- `resolvePathToSid(localName, sidInfo, currentPath)` - Find SID for YANG path
+- `resolveIdentityToSid(identityName, sidInfo)` - Find SID for identity
+- `augmentSidInfoWithAliases(sidInfo, choiceNames, caseNames)` - Add choice/case aliases
 
 **Data Structures**:
 - **BiMaps**: `pathToSid` ↔ `sidToPath`, `identityToSid` ↔ `sidToIdentity`
@@ -97,7 +97,7 @@ Converts YAML/JSON configuration to CBOR with Delta-SID encoding.
 **Purpose**: Main transformation engine - JSON → Delta-SID object
 
 **Key Functions**:
-- `transform(jsonObj, typeTable, sidTree, options)` - Main entry point
+- `transform(jsonObj, typeTable, sidInfo, options)` - Main entry point
 - `transformToSidObject(...)` - Recursive transformation with parent tracking
 - `getTransformStats(deltaSidObj, jsonObj)` - Transformation statistics
 
@@ -116,13 +116,13 @@ Converts YAML/JSON configuration to CBOR with Delta-SID encoding.
 **Purpose**: Encode YANG-typed values to CBOR format
 
 **Key Functions**:
-- `encodeValue(value, typeInfo, sidTree, isUnion)` - Encode by type
+- `encodeValue(value, typeInfo, sidInfo, isUnion)` - Encode by type
 - `encodeEnum(value, typeInfo)` - String → enum value
-- `encodeIdentity(value, sidTree)` - Identity → SID
+- `encodeIdentity(value, sidInfo)` - Identity → SID
 - `encodeDecimal64(value, fractionDigits)` - Number → Tag(4, [exp, mantissa])
 - `encodeBits(bitArray, typeInfo)` - Bit names → Tag(43, Buffer)
 - `encodeBinary(base64String)` - Base64 → Buffer
-- `encodeUnion(value, typeInfo, sidTree)` - Try each union member type
+- `encodeUnion(value, typeInfo, sidInfo)` - Try each union member type
 
 **RFC 9254 Tags**:
 - **Tag(4)**: Decimal64 as `[exponent, mantissa]`
@@ -154,10 +154,10 @@ Converts CBOR with Delta-SID back to YAML/JSON.
 **Purpose**: Main decoding engine - CBOR Delta-SID → Nested JSON
 
 **Key Functions**:
-- `detransform(cborData, typeTable, sidTree)` - Main entry (returns nested)
-- `detransformFromDeltaSid(cborData, typeTable, sidTree)` - Legacy (returns flat)
+- `detransform(cborData, typeTable, sidInfo)` - Main entry (returns nested)
+- `detransformFromDeltaSid(cborData, typeTable, sidInfo)` - Legacy (returns flat)
 - `cborToJsonDelta(...)` - Recursive Delta-SID resolution
-- `buildSidInfoMap(sidTree)` - Create reverse lookup map
+- `buildSidInfoMap(sidInfo)` - Create reverse lookup map
 - `getDetransformStats(deltaSidObj, nested)` - Decoding statistics
 
 **Delta-SID Resolution**:
@@ -177,17 +177,17 @@ Converts CBOR with Delta-SID back to YAML/JSON.
 **Purpose**: Decode CBOR values back to YANG types
 
 **Key Functions**:
-- `decodeValue(cborValue, typeInfo, sidTree, isUnion, typeTable, yangPath)` - Decode by type
+- `decodeValue(cborValue, typeInfo, sidInfo, isUnion, typeTable, yangPath)` - Decode by type
 - `decodeEnum(cborValue, typeInfo, isUnion, yangPath)` - Enum value → string name
-- `decodeIdentity(cborValue, typeInfo, sidTree, isUnion)` - SID → identity name
+- `decodeIdentity(cborValue, typeInfo, sidInfo, isUnion)` - SID → identity name
 - `decodeDecimal64(cborValue)` - Tag(4) → JavaScript number
 - `decodeBits(cborValue, typeInfo)` - Tag(43) → bit name array
 - `decodeBinary(cborValue)` - Buffer → base64 string
-- `decodeUnion(cborValue, typeInfo, sidTree, typeTable, yangPath)` - Try union members
+- `decodeUnion(cborValue, typeInfo, sidInfo, typeTable, yangPath)` - Try union members
 
 **BiMap Reverse Lookup**:
 - Enum: `typeInfo.enum.valueToName.get(value)` → name
-- Identity: `sidTree.sidToIdentity.get(sid)` → identity
+- Identity: `sidInfo.sidToIdentity.get(sid)` → identity
 
 **Dependencies**: `cbor-x` (Tag)
 
@@ -270,13 +270,13 @@ After restructuring, imports changed from flat to hierarchical:
 **Before**:
 ```javascript
 import { transform } from './lib/transformer-delta.js';
-import { buildSidTree } from './lib/sid-resolver.js';
+import { buildSidInfo } from './lib/sid-resolver.js';
 ```
 
 **After**:
 ```javascript
 import { transform } from './lib/encoder/transformer-delta.js';
-import { buildSidTree } from './lib/common/sid-resolver.js';
+import { buildSidInfo } from './lib/common/sid-resolver.js';
 ```
 
 **Within lib modules**:

@@ -35,13 +35,13 @@ const LIST_KEYS = {
 /**
  * Build reverse-lookup map from SID to node info
  */
-function buildSidInfoMap(sidTree) {
+function buildSidInfoMap(sidInfo) {
   const sidInfoMap = new Map();
 
-  for (const [path, nodeInfo] of sidTree.nodeInfo) {
+  for (const [path, nodeInfo] of sidInfo.nodeInfo) {
     const prefixedPath = nodeInfo.prefixedPath ||
-      sidTree.pathToPrefixed?.get(path) ||
-      sidTree.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+      sidInfo.pathToPrefixed?.get(path) ||
+      sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
 
     sidInfoMap.set(nodeInfo.sid, {
       ...nodeInfo,
@@ -51,9 +51,9 @@ function buildSidInfoMap(sidTree) {
     });
   }
 
-  for (const [sid, path] of sidTree.sidToPath) {
+  for (const [sid, path] of sidInfo.sidToPath) {
     if (!sidInfoMap.has(sid)) {
-      const prefixedPath = sidTree.sidToPrefixedPath?.get(sid) || path;
+      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
       sidInfoMap.set(sid, {
         sid,
         path,
@@ -106,7 +106,7 @@ function isLeafValue(value) {
 /**
  * Recursively extract instance-identifier entries from CBOR data
  */
-function extractInstanceIds(cborData, sidInfoMap, typeTable, sidTree, parentSid, currentPrefixedPath, listKeys, results) {
+function extractInstanceIds(cborData, sidInfoMap, typeTable, sidInfo, parentSid, currentPrefixedPath, listKeys, results) {
   if (cborData === null || cborData === undefined || typeof cborData !== 'object') {
     return;
   }
@@ -153,7 +153,7 @@ function extractInstanceIds(cborData, sidInfoMap, typeTable, sidTree, parentSid,
             if (nodeInfo && keyNames.includes(nodeInfo.localName)) {
               const typeInfo = typeTable.types.get(nodeInfo.path);
               const decodedValue = typeInfo
-                ? decodeValue(value, typeInfo, sidTree, false, null, nodeInfo.path)
+                ? decodeValue(value, typeInfo, sidInfo, false, null, nodeInfo.path)
                 : value;
               itemKeys[nodeInfo.localName] = decodedValue;
             }
@@ -164,7 +164,7 @@ function extractInstanceIds(cborData, sidInfoMap, typeTable, sidTree, parentSid,
           itemListKeys.set(currentPrefixedPath, itemKeys);
         }
 
-        extractInstanceIds(item, sidInfoMap, typeTable, sidTree, parentSid, currentPrefixedPath, itemListKeys, results);
+        extractInstanceIds(item, sidInfoMap, typeTable, sidInfo, parentSid, currentPrefixedPath, itemListKeys, results);
       }
     }
     return;
@@ -215,14 +215,14 @@ function extractInstanceIds(cborData, sidInfoMap, typeTable, sidTree, parentSid,
         const xpath = buildXPath(newPrefixedPath, listKeys);
         const typeInfo = typeTable.types.get(nodeInfo.path);
         const decodedValue = typeInfo
-          ? decodeValue(value, typeInfo, sidTree, false, null, nodeInfo.path)
+          ? decodeValue(value, typeInfo, sidInfo, false, null, nodeInfo.path)
           : value;
 
         results.push({ [xpath]: decodedValue });
       } else if (Array.isArray(value)) {
-        extractInstanceIds(value, sidInfoMap, typeTable, sidTree, absoluteSid, newPrefixedPath, listKeys, results);
+        extractInstanceIds(value, sidInfoMap, typeTable, sidInfo, absoluteSid, newPrefixedPath, listKeys, results);
       } else {
-        extractInstanceIds(value, sidInfoMap, typeTable, sidTree, absoluteSid, newPrefixedPath, listKeys, results);
+        extractInstanceIds(value, sidInfoMap, typeTable, sidInfo, absoluteSid, newPrefixedPath, listKeys, results);
       }
     }
   }
@@ -232,11 +232,11 @@ function extractInstanceIds(cborData, sidInfoMap, typeTable, sidTree, parentSid,
  * Detransform CBOR to Instance-Identifier format
  * @param {Map|object} cborData - CBOR data with Delta-SID encoding
  * @param {object} typeTable - Type table
- * @param {object} sidTree - SID tree
+ * @param {object} sidInfo - SID tree
  * @returns {Array<Object>} Array of instance-identifier entries
  */
-export function detransformToInstanceId(cborData, typeTable, sidTree) {
-  const sidInfoMap = buildSidInfoMap(sidTree);
+export function detransformToInstanceId(cborData, typeTable, sidInfo) {
+  const sidInfoMap = buildSidInfoMap(sidInfo);
   const results = [];
   const listKeys = new Map();
 
@@ -252,7 +252,7 @@ export function detransformToInstanceId(cborData, typeTable, sidTree) {
     }
   }
 
-  extractInstanceIds(cborMap, sidInfoMap, typeTable, sidTree, null, '', listKeys, results);
+  extractInstanceIds(cborMap, sidInfoMap, typeTable, sidInfo, null, '', listKeys, results);
 
   return results;
 }

@@ -28,7 +28,7 @@ function stripModulePrefixes(path) {
  * Transform JSON object to CBOR-ready format with context-aware Delta-SID
  * @param {object} jsonObj - JSON object from YAML
  * @param {object} typeTable - Type table from yang-type-extractor
- * @param {object} sidTree - SID tree from sid-resolver (with nodeInfo)
+ * @param {object} sidInfo - SID tree from sid-resolver (with nodeInfo)
  * @param {string} currentPath - Current YANG path (for nested objects)
  * @param {number|null} parentSid - Parent's absolute SID for Delta-SID calculation
  * @param {boolean} useMap - Whether to use Map (Tag 259) or plain Object
@@ -37,7 +37,7 @@ function stripModulePrefixes(path) {
 export function transformToSidObject(
   jsonObj,
   typeTable,
-  sidTree,
+  sidInfo,
   currentPath = '',
   parentSid = null,
   useMap = true,
@@ -69,7 +69,7 @@ export function transformToSidObject(
     // Handle nested objects
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       // Get SID for this object
-      const currentSid = resolvePathToSid(key, sidTree, currentPath);
+      const currentSid = resolvePathToSid(key, sidInfo, currentPath);
 
       if (currentSid === null) {
         console.warn(`No SID found for path: ${yangPath}`);
@@ -81,7 +81,7 @@ export function transformToSidObject(
       const nestedResult = transformToSidObject(
         value,
         typeTable,
-        sidTree,
+        sidInfo,
         yangPath,
         currentSid,
         useMap,
@@ -89,7 +89,7 @@ export function transformToSidObject(
       );
 
       // Determine key encoding
-      const nodeInfo = sidTree.nodeInfo?.get(yangPathNoPrefix) || sidTree.nodeInfo?.get(yangPath);
+      const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
       let encodedKey;
       const isDeltaSid = (nodeInfo?.parent !== null && nodeInfo?.parent === parentSid);
 
@@ -117,7 +117,7 @@ export function transformToSidObject(
     // Handle arrays (list in YANG)
     if (Array.isArray(value)) {
       // Get SID for the array (list) node
-      const arraySid = resolvePathToSid(key, sidTree, currentPath);
+      const arraySid = resolvePathToSid(key, sidInfo, currentPath);
 
       if (arraySid === null) {
         console.warn(`No SID found for list path: ${yangPath}`);
@@ -133,7 +133,7 @@ export function transformToSidObject(
           const itemResult = transformToSidObject(
             item,
             typeTable,
-            sidTree,
+            sidInfo,
             yangPath,
             arraySid,  // Array SID becomes parent for all items
             useMap,
@@ -147,7 +147,7 @@ export function transformToSidObject(
       });
 
       // Determine key encoding for the array
-      const nodeInfo = sidTree.nodeInfo?.get(yangPathNoPrefix) || sidTree.nodeInfo?.get(yangPath);
+      const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
       let encodedKey;
       const isDeltaSid = (nodeInfo?.parent !== null && nodeInfo?.parent === parentSid);
 
@@ -177,11 +177,11 @@ export function transformToSidObject(
     // Strip module prefixes for typeTable lookup
     const typeInfo = typeTable.types.get(yangPathNoPrefix);
     const encodedValue = typeInfo
-      ? encodeValue(value, typeInfo, sidTree, false)
+      ? encodeValue(value, typeInfo, sidInfo, false)
       : value;
 
     // Step 2: KEY encoding with context-aware Delta-SID
-    const currentSid = resolvePathToSid(key, sidTree, currentPath);
+    const currentSid = resolvePathToSid(key, sidInfo, currentPath);
 
     if (currentSid === null) {
       console.warn(`No SID found for path: ${yangPath}`);
@@ -189,7 +189,7 @@ export function transformToSidObject(
     }
 
     // Get node info to check parent relationship
-    const nodeInfo = sidTree.nodeInfo?.get(yangPathNoPrefix) || sidTree.nodeInfo?.get(yangPath);
+    const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
 
     let encodedKey;
     if (nodeInfo && nodeInfo.parent !== null && nodeInfo.parent === parentSid) {
@@ -266,19 +266,19 @@ export function transformToSidObject(
  * Transform JSON object to CBOR-ready format (convenience function)
  * @param {object} jsonObj - JSON object from YAML
  * @param {object} typeTable - Type table
- * @param {object} sidTree - SID tree with nodeInfo
+ * @param {object} sidInfo - SID tree with nodeInfo
  * @param {object} options - Transformation options
  * @param {boolean} options.useMap - Use Map (Tag 259) or plain Object (default: true)
  * @returns {Map|object} Transformed Map or Object ready for CBOR encoding
  */
-export function transform(jsonObj, typeTable, sidTree, options = {}) {
+export function transform(jsonObj, typeTable, sidInfo, options = {}) {
   const useMap = options.useMap !== undefined ? options.useMap : true;
   const sortMode = options.sortMode || 'velocity';  // Default to VelocityDriveSP mode
 
   // Return Map (with Tag 259) or plain Object (without Tag 259)
   // useMap=true: Better for roundtrip testing, decoder knows it's SID map
   // useMap=false: Device-compatible, smaller size, no Tag overhead
-  return transformToSidObject(jsonObj, typeTable, sidTree, '', null, useMap, sortMode);
+  return transformToSidObject(jsonObj, typeTable, sidInfo, '', null, useMap, sortMode);
 }
 
 /**

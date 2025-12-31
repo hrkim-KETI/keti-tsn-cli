@@ -9,13 +9,13 @@
  * @module input-loader
  */
 
-import { buildSidTree, augmentSidTreeWithAliases } from './sid-resolver.js';
+import { buildSidInfo, augmentSidInfoWithAliases } from './sid-resolver.js';
 import { extractYangTypes } from './yang-type-extractor.js';
 import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -52,20 +52,20 @@ async function isCacheValid(cacheFile, yangCacheDir) {
 /**
  * Serialize Maps and Sets to JSON-compatible format
  */
-function serializeData(sidTree, typeTable) {
+function serializeData(sidInfo, typeTable) {
   return {
     version: CACHE_VERSION,
     timestamp: Date.now(),
-    sidTree: {
-      pathToSid: [...sidTree.pathToSid],
-      sidToPath: [...sidTree.sidToPath],
-      prefixedPathToSid: [...sidTree.prefixedPathToSid],
-      sidToPrefixedPath: [...sidTree.sidToPrefixedPath],
-      pathToPrefixed: [...sidTree.pathToPrefixed],
-      identityToSid: [...sidTree.identityToSid],
-      sidToIdentity: [...sidTree.sidToIdentity],
-      nodeInfo: [...sidTree.nodeInfo],
-      leafToPaths: [...sidTree.leafToPaths]
+    sidInfo: {
+      pathToSid: [...sidInfo.pathToSid],
+      sidToPath: [...sidInfo.sidToPath],
+      prefixedPathToSid: [...sidInfo.prefixedPathToSid],
+      sidToPrefixedPath: [...sidInfo.sidToPrefixedPath],
+      pathToPrefixed: [...sidInfo.pathToPrefixed],
+      identityToSid: [...sidInfo.identityToSid],
+      sidToIdentity: [...sidInfo.sidToIdentity],
+      nodeInfo: [...sidInfo.nodeInfo],
+      leafToPaths: [...sidInfo.leafToPaths]
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
@@ -112,16 +112,16 @@ function deserializeData(data) {
     throw new Error('Cache version mismatch');
   }
 
-  const sidTree = {
-    pathToSid: new Map(data.sidTree.pathToSid),
-    sidToPath: new Map(data.sidTree.sidToPath),
-    prefixedPathToSid: new Map(data.sidTree.prefixedPathToSid),
-    sidToPrefixedPath: new Map(data.sidTree.sidToPrefixedPath),
-    pathToPrefixed: new Map(data.sidTree.pathToPrefixed),
-    identityToSid: new Map(data.sidTree.identityToSid),
-    sidToIdentity: new Map(data.sidTree.sidToIdentity),
-    nodeInfo: new Map(data.sidTree.nodeInfo),
-    leafToPaths: new Map(data.sidTree.leafToPaths)
+  const sidInfo = {
+    pathToSid: new Map(data.sidInfo.pathToSid),
+    sidToPath: new Map(data.sidInfo.sidToPath),
+    prefixedPathToSid: new Map(data.sidInfo.prefixedPathToSid),
+    sidToPrefixedPath: new Map(data.sidInfo.sidToPrefixedPath),
+    pathToPrefixed: new Map(data.sidInfo.pathToPrefixed),
+    identityToSid: new Map(data.sidInfo.identityToSid),
+    sidToIdentity: new Map(data.sidInfo.sidToIdentity),
+    nodeInfo: new Map(data.sidInfo.nodeInfo),
+    leafToPaths: new Map(data.sidInfo.leafToPaths)
   };
 
   const typeTable = {
@@ -133,7 +133,7 @@ function deserializeData(data) {
     nodeOrders: new Map(data.typeTable.nodeOrders)
   };
 
-  return { sidTree, typeTable };
+  return { sidInfo, typeTable };
 }
 
 /**
@@ -170,7 +170,7 @@ async function loadFromCache(cacheFile, verbose) {
   const result = deserializeData(data);
 
   if (verbose) {
-    const sidCount = result.sidTree.pathToSid.size;
+    const sidCount = result.sidInfo.pathToSid.size;
     const typeCount = result.typeTable.types.size;
     console.log(`  Loaded from cache: ${sidCount} SIDs, ${typeCount} types`);
   }
@@ -181,8 +181,8 @@ async function loadFromCache(cacheFile, verbose) {
 /**
  * Save to cache file
  */
-async function saveToCache(cacheFile, sidTree, typeTable, verbose) {
-  const data = serializeData(sidTree, typeTable);
+async function saveToCache(cacheFile, sidInfo, typeTable, verbose) {
+  const data = serializeData(sidInfo, typeTable);
   await fs.promises.writeFile(cacheFile, JSON.stringify(data), 'utf8');
 
   if (verbose) {
@@ -200,7 +200,7 @@ async function saveToCache(cacheFile, sidTree, typeTable, verbose) {
  * @param {boolean} verbose - Enable verbose logging
  * @param {object} options - Additional options
  * @param {boolean} options.noCache - Disable cache (force reload)
- * @returns {Promise<{sidTree: object, typeTable: object}>}
+ * @returns {Promise<{sidInfo: object, typeTable: object}>}
  */
 export async function loadYangInputs(yangCacheDir, verbose = false, options = {}) {
   const cacheFile = getCacheFilePath(yangCacheDir);
@@ -233,8 +233,8 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     console.log(`  - Found ${sidFiles.length} SID files`);
   }
 
-  // Step 2: Initialize merged SID tree structure
-  const sidTree = {
+  // Step 2: Initialize merged SID info structure
+  const sidInfo = {
     pathToSid: new Map(),
     sidToPath: new Map(),
     prefixedPathToSid: new Map(),
@@ -247,41 +247,41 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   };
 
   // Load all SID files in parallel for better performance
-  const sidTrees = await Promise.all(sidFiles.map(sidFile => buildSidTree(sidFile)));
+  const sidInfos = await Promise.all(sidFiles.map(sidFile => buildSidInfo(sidFile)));
 
-  // Merge all SID trees
-  for (const tree of sidTrees) {
-    for (const [path, sid] of tree.pathToSid) {
-      sidTree.pathToSid.set(path, sid);
+  // Merge all SID infos
+  for (const info of sidInfos) {
+    for (const [path, sid] of info.pathToSid) {
+      sidInfo.pathToSid.set(path, sid);
     }
-    for (const [sid, path] of tree.sidToPath) {
-      sidTree.sidToPath.set(sid, path);
+    for (const [sid, path] of info.sidToPath) {
+      sidInfo.sidToPath.set(sid, path);
     }
-    for (const [prefixedPath, sid] of tree.prefixedPathToSid) {
-      sidTree.prefixedPathToSid.set(prefixedPath, sid);
+    for (const [prefixedPath, sid] of info.prefixedPathToSid) {
+      sidInfo.prefixedPathToSid.set(prefixedPath, sid);
     }
-    for (const [sid, prefixedPath] of tree.sidToPrefixedPath) {
-      sidTree.sidToPrefixedPath.set(sid, prefixedPath);
+    for (const [sid, prefixedPath] of info.sidToPrefixedPath) {
+      sidInfo.sidToPrefixedPath.set(sid, prefixedPath);
     }
-    for (const [strippedPath, prefixedPath] of tree.pathToPrefixed) {
-      sidTree.pathToPrefixed.set(strippedPath, prefixedPath);
+    for (const [strippedPath, prefixedPath] of info.pathToPrefixed) {
+      sidInfo.pathToPrefixed.set(strippedPath, prefixedPath);
     }
-    for (const [identity, sid] of tree.identityToSid) {
-      sidTree.identityToSid.set(identity, sid);
+    for (const [identity, sid] of info.identityToSid) {
+      sidInfo.identityToSid.set(identity, sid);
     }
-    for (const [sid, identity] of tree.sidToIdentity) {
-      sidTree.sidToIdentity.set(sid, identity);
+    for (const [sid, identity] of info.sidToIdentity) {
+      sidInfo.sidToIdentity.set(sid, identity);
     }
     // Merge leafToPaths index for fuzzy matching
-    for (const [leaf, paths] of tree.leafToPaths) {
-      const existing = sidTree.leafToPaths.get(leaf) || [];
-      sidTree.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]);
+    for (const [leaf, paths] of info.leafToPaths) {
+      const existing = sidInfo.leafToPaths.get(leaf) || [];
+      sidInfo.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]);
     }
   }
 
-  // Step 3: Recalculate parent relationships for merged tree
+  // Step 3: Recalculate parent relationships for merged info
   // This is necessary because parent might be from a different module
-  for (const [nodePath, sid] of sidTree.pathToSid) {
+  for (const [nodePath, sid] of sidInfo.pathToSid) {
     if (nodePath.startsWith('identity:') || nodePath.startsWith('feature:')) {
       continue;
     }
@@ -291,18 +291,18 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
     for (let i = parts.length - 1; i > 0; i--) {
       const ancestorPath = parts.slice(0, i).join('/');
-      if (sidTree.pathToSid.has(ancestorPath)) {
-        parent = sidTree.pathToSid.get(ancestorPath);
+      if (sidInfo.pathToSid.has(ancestorPath)) {
+        parent = sidInfo.pathToSid.get(ancestorPath);
         break;
       }
     }
 
-    sidTree.nodeInfo.set(nodePath, {
+    sidInfo.nodeInfo.set(nodePath, {
       sid,
       parent,
       deltaSid: parent !== null ? sid - parent : sid,
       depth: parts.length,
-      prefixedPath: sidTree.pathToPrefixed.get(nodePath) || sidTree.sidToPrefixedPath.get(sid) || nodePath
+      prefixedPath: sidInfo.pathToPrefixed.get(nodePath) || sidInfo.sidToPrefixedPath.get(sid) || nodePath
     });
   }
 
@@ -397,11 +397,11 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
   }
 
-  // Step 7: Build alias mappings for SID tree (choice/case handling)
-  augmentSidTreeWithAliases(sidTree, typeTable.choiceNames, typeTable.caseNames);
+  // Step 7: Build alias mappings for SID info (choice/case handling)
+  augmentSidInfoWithAliases(sidInfo, typeTable.choiceNames, typeTable.caseNames);
 
   if (verbose) {
-    const sidCount = sidTree.pathToSid.size;
+    const sidCount = sidInfo.pathToSid.size;
     const typeCount = typeTable.types.size;
     const identityCount = typeTable.identities.size;
 
@@ -419,7 +419,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   // Step 8: Save to cache for future fast loading
   if (!options.noCache) {
     try {
-      await saveToCache(cacheFile, sidTree, typeTable, verbose);
+      await saveToCache(cacheFile, sidInfo, typeTable, verbose);
     } catch (err) {
       // Cache save failure is not critical
       if (verbose) {
@@ -428,5 +428,5 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
   }
 
-  return { sidTree, typeTable };
+  return { sidInfo, typeTable };
 }

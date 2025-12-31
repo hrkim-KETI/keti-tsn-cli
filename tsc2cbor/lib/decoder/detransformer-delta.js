@@ -9,15 +9,15 @@ import { decodeValue } from './value-decoder.js';
 
 /**
  * Build reverse-lookup map from SID to node info
- * @param {object} sidTree - SID tree with nodeInfo
+ * @param {object} sidInfo - SID tree with nodeInfo
  * @returns {Map} Map of SID → node info
  */
-function buildSidInfoMap(sidTree) {
+function buildSidInfoMap(sidInfo) {
   const sidInfoMap = new Map();
 
   // Use nodeInfo which has parent relationships
-  for (const [path, nodeInfo] of sidTree.nodeInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || sidTree.pathToPrefixed?.get(path) || sidTree.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+  for (const [path, nodeInfo] of sidInfo.nodeInfo) {
+    const prefixedPath = nodeInfo.prefixedPath || sidInfo.pathToPrefixed?.get(path) || sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
     sidInfoMap.set(nodeInfo.sid, {
@@ -30,9 +30,9 @@ function buildSidInfoMap(sidTree) {
   }
 
   // Also add entries from sidToPath for paths without nodeInfo
-  for (const [sid, path] of sidTree.sidToPath) {
+  for (const [sid, path] of sidInfo.sidToPath) {
     if (!sidInfoMap.has(sid)) {
-      const prefixedPath = sidTree.sidToPrefixedPath?.get(sid) || path;
+      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
       const prefixedSegments = prefixedPath.split('/').filter(Boolean);
       const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
       sidInfoMap.set(sid, {
@@ -55,11 +55,11 @@ function buildSidInfoMap(sidTree) {
  * @param {*} cborData - CBOR data (Map/Array/primitive)
  * @param {Map} sidInfoMap - Reverse-lookup map SID → node info
  * @param {object} typeTable - Type table for value decoding
- * @param {object} sidTree - SID tree for identity resolution
+ * @param {object} sidInfo - SID tree for identity resolution
  * @param {number|null} parentSid - Parent's absolute SID
  * @returns {*} Decoded JavaScript object
  */
-function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidTree, parentSid = null) {
+function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidInfo, parentSid = null) {
   // Primitives
   if (cborData === null || cborData === undefined || typeof cborData !== 'object') {
     return cborData;
@@ -67,7 +67,7 @@ function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidTree, parentSid = n
 
   // Arrays - recursively decode each item with same parentSid
   if (Array.isArray(cborData)) {
-    return cborData.map(item => cborToJsonDelta(item, sidInfoMap, typeTable, sidTree, parentSid));
+    return cborData.map(item => cborToJsonDelta(item, sidInfoMap, typeTable, sidInfo, parentSid));
   }
 
   // Maps and plain Objects with SID keys - resolve SIDs and recursively decode
@@ -137,11 +137,11 @@ function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidTree, parentSid = n
 
       if (isNestedMap || isNestedObject || Array.isArray(value)) {
         // Nested structure - recurse with current absoluteSid as parentSid
-        decodedValue = cborToJsonDelta(value, sidInfoMap, typeTable, sidTree, absoluteSid);
+        decodedValue = cborToJsonDelta(value, sidInfoMap, typeTable, sidInfo, absoluteSid);
       } else {
         // Leaf value - decode based on type
         decodedValue = typeInfo
-          ? decodeValue(value, typeInfo, sidTree, false, null, yangPath)
+          ? decodeValue(value, typeInfo, sidInfo, false, null, yangPath)
           : value;
       }
 
@@ -159,17 +159,17 @@ function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidTree, parentSid = n
  * Detransform CBOR Map to flat YANG path object (legacy interface)
  * @param {Map|object} cborData - CBOR Map or object
  * @param {object} typeTable - Type table
- * @param {object} sidTree - SID tree with nodeInfo
+ * @param {object} sidInfo - SID tree with nodeInfo
  * @returns {object} Flat object with YANG paths as keys
  */
-export function detransformFromDeltaSid(cborData, typeTable, sidTree) {
-  const sidInfoMap = buildSidInfoMap(sidTree);
+export function detransformFromDeltaSid(cborData, typeTable, sidInfo) {
+  const sidInfoMap = buildSidInfoMap(sidInfo);
 
   // Convert to Map if needed
   const cborMap = cborData instanceof Map ? cborData : new Map(Object.entries(cborData));
 
   // Decode with Delta-SID support
-  const nested = cborToJsonDelta(cborMap, sidInfoMap, typeTable, sidTree, null);
+  const nested = cborToJsonDelta(cborMap, sidInfoMap, typeTable, sidInfo, null);
 
   // Flatten to YANG paths
   return flattenObject(nested);
@@ -179,11 +179,11 @@ export function detransformFromDeltaSid(cborData, typeTable, sidTree) {
  * Detransform CBOR Map to nested object (new interface)
  * @param {Map|object} cborData - CBOR Map or object
  * @param {object} typeTable - Type table
- * @param {object} sidTree - SID tree with nodeInfo
+ * @param {object} sidInfo - SID tree with nodeInfo
  * @returns {object} Nested object
  */
-export function detransform(cborData, typeTable, sidTree) {
-  const sidInfoMap = buildSidInfoMap(sidTree);
+export function detransform(cborData, typeTable, sidInfo) {
+  const sidInfoMap = buildSidInfoMap(sidInfo);
 
   // Convert to Map if needed, preserving numeric keys
   let cborMap;
@@ -201,7 +201,7 @@ export function detransform(cborData, typeTable, sidTree) {
   }
 
   // Decode with Delta-SID support, keeping nested structure
-  return cborToJsonDelta(cborMap, sidInfoMap, typeTable, sidTree, null);
+  return cborToJsonDelta(cborMap, sidInfoMap, typeTable, sidInfo, null);
 }
 
 /**
