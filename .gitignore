@@ -36,3 +36,4 @@ coverage/
 .env
 .env.local
 INTERNAL.md
+TSC2CBOR.md

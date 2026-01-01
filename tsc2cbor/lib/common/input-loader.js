@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -69,7 +69,6 @@ function serializeData(sidInfo, typeTable) {
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
-      identities: [...typeTable.identities].map(([k, v]) => [k, serializeIdentity(v)]),
       typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)]),
       choiceNames: [...typeTable.choiceNames],
       caseNames: [...typeTable.caseNames],
@@ -94,17 +93,6 @@ function serializeTypeInfo(typeInfo) {
 }
 
 /**
- * Serialize identity info
- */
-function serializeIdentity(identity) {
-  if (!identity) return identity;
-  return {
-    ...identity,
-    bases: identity.bases ? [...identity.bases] : []
-  };
-}
-
-/**
  * Deserialize JSON data back to Maps and Sets
  */
 function deserializeData(data) {
@@ -126,7 +114,6 @@ function deserializeData(data) {
 
   const typeTable = {
     types: new Map(data.typeTable.types.map(([k, v]) => [k, deserializeTypeInfo(v)])),
-    identities: new Map(data.typeTable.identities.map(([k, v]) => [k, deserializeIdentity(v)])),
     typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)])),
     choiceNames: new Set(data.typeTable.choiceNames),
     caseNames: new Set(data.typeTable.caseNames),
@@ -149,17 +136,6 @@ function deserializeTypeInfo(typeInfo) {
     };
   }
   return result;
-}
-
-/**
- * Deserialize identity info
- */
-function deserializeIdentity(identity) {
-  if (!identity) return identity;
-  return {
-    ...identity,
-    bases: identity.bases ? new Set(identity.bases) : new Set()
-  };
 }
 
 /**
@@ -318,7 +294,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   // Step 5: Initialize merged type table structure
   const typeTable = {
     types: new Map(),
-    identities: new Map(),
     typedefs: new Map(),
     choiceNames: new Set(),
     caseNames: new Set(),
@@ -334,9 +309,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   for (const table of typeTables) {
     for (const [path, type] of table.types) {
       typeTable.types.set(path, type);
-    }
-    for (const [name, identityDef] of table.identities) {
-      typeTable.identities.set(name, identityDef);
     }
     for (const [name, typedef] of table.typedefs) {
       typeTable.typedefs.set(name, typedef);
@@ -403,7 +375,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   if (verbose) {
     const sidCount = sidInfo.pathToSid.size;
     const typeCount = typeTable.types.size;
-    const identityCount = typeTable.identities.size;
 
     let enumCount = 0;
     for (const typeInfo of typeTable.types.values()) {
@@ -413,7 +384,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
 
     console.log(`  Loaded: ${sidCount} SID mappings`);
-    console.log(`  Loaded: ${typeCount} types (${enumCount} enums), ${identityCount} identities`);
+    console.log(`  Loaded: ${typeCount} types (${enumCount} enums)`);
   }
 
   // Step 8: Save to cache for future fast loading
