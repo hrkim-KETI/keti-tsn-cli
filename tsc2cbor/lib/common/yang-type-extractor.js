@@ -91,9 +91,6 @@ function extractTypesFromYin(yinObj) {
     // BiMap: Path → Type Info (typeInfo.enum contains BiMap if enumeration)
     types: new Map(),                // path → type info
 
-    // Identity Info
-    identities: new Map(),           // identity name → {base, module}
-
     // Typedefs
     typedefs: new Map(),             // typedef name → type definition
 
@@ -123,14 +120,6 @@ function extractTypesFromYin(yinObj) {
     });
   }
 
-  // Extract identities
-  if (module.identity) {
-    const identities = Array.isArray(module.identity) ? module.identity : [module.identity];
-    identities.forEach(identity => {
-      extractIdentity(identity, typeTable, moduleName);
-    });
-  }
-
   // Initialize order counter
   typeTable._orderCounter = 0;
 
@@ -157,19 +146,6 @@ function extractTypedef(typedef, typeTable) {
 
   // Note: Enum BiMap is already stored in typeInfo.enum by parseTypeNode()
   // No need for separate typeTable.enums structure
-}
-
-/**
- * Extract identity information
- */
-function extractIdentity(identity, typeTable, moduleName) {
-  const identityName = identity.name;
-  const base = identity.base?.name || null;
-
-  typeTable.identities.set(identityName, {
-    base: base,
-    module: moduleName
-  });
 }
 
 /**
@@ -428,7 +404,6 @@ export async function extractMultipleYangTypes(yangFiles, yangSearchPath) {
   // Merge all type tables
   const merged = {
     types: new Map(),
-    identities: new Map(),
     typedefs: new Map()
   };
 
@@ -436,11 +411,6 @@ export async function extractMultipleYangTypes(yangFiles, yangSearchPath) {
     // Merge types (typeInfo.enum already contains BiMap if enumeration)
     for (const [path, typeInfo] of table.types) {
       merged.types.set(path, typeInfo);
-    }
-
-    // Merge identities
-    for (const [identityName, info] of table.identities) {
-      merged.identities.set(identityName, info);
     }
 
     // Merge typedefs
