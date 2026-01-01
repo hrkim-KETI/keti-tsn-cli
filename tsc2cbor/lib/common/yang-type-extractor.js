@@ -94,10 +94,6 @@ function extractTypesFromYin(yinObj) {
     // Typedefs
     typedefs: new Map(),             // typedef name → type definition
 
-    // Choice / Case metadata (for alias handling)
-    choiceNames: new Set(),
-    caseNames: new Set(),
-
     // Node order (for VelocityDriveSP sorting)
     // Map: local node name → order (within module)
     nodeOrders: new Map()            // localName → order
@@ -277,23 +273,15 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
 }
 
 /**
- * Process YIN choice node to collect alias metadata and recurse into children
+ * Process YIN choice node and recurse into children
  */
 function processChoiceNode(choiceNode, currentPath, typeTable, moduleName, depth) {
   if (!choiceNode) return;
-  const choiceName = choiceNode.name;
-
-  if (choiceName) {
-    typeTable.choiceNames.add(choiceName);
-  }
 
   // Handle explicit cases
   if (choiceNode.case) {
     const cases = Array.isArray(choiceNode.case) ? choiceNode.case : [choiceNode.case];
     cases.forEach(caseNode => {
-      if (caseNode?.name) {
-        typeTable.caseNames.add(caseNode.name);
-      }
       extractDataTypes(caseNode, currentPath, typeTable, moduleName, depth + 1);
     });
   }
