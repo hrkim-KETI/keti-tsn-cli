@@ -9,13 +9,13 @@
  * @module input-loader
  */
 
-import { buildSidInfo, augmentSidInfoWithAliases } from './sid-resolver.js';
+import { buildSidInfo } from './sid-resolver.js';
 import { extractYangTypes } from './yang-type-extractor.js';
 import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -70,8 +70,6 @@ function serializeData(sidInfo, typeTable) {
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
       typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)]),
-      choiceNames: [...typeTable.choiceNames],
-      caseNames: [...typeTable.caseNames],
       nodeOrders: [...typeTable.nodeOrders]
     }
   };
@@ -115,8 +113,6 @@ function deserializeData(data) {
   const typeTable = {
     types: new Map(data.typeTable.types.map(([k, v]) => [k, deserializeTypeInfo(v)])),
     typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)])),
-    choiceNames: new Set(data.typeTable.choiceNames),
-    caseNames: new Set(data.typeTable.caseNames),
     nodeOrders: new Map(data.typeTable.nodeOrders)
   };
 
@@ -295,8 +291,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   const typeTable = {
     types: new Map(),
     typedefs: new Map(),
-    choiceNames: new Set(),
-    caseNames: new Set(),
     nodeOrders: new Map()
   };
 
@@ -312,16 +306,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
     for (const [name, typedef] of table.typedefs) {
       typeTable.typedefs.set(name, typedef);
-    }
-    if (table.choiceNames) {
-      for (const name of table.choiceNames) {
-        typeTable.choiceNames.add(name);
-      }
-    }
-    if (table.caseNames) {
-      for (const name of table.caseNames) {
-        typeTable.caseNames.add(name);
-      }
     }
     if (table.nodeOrders) {
       for (const [nodeName, order] of table.nodeOrders) {
@@ -368,9 +352,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
       });
     }
   }
-
-  // Step 7: Build alias mappings for SID info (choice/case handling)
-  augmentSidInfoWithAliases(sidInfo, typeTable.choiceNames, typeTable.caseNames);
 
   if (verbose) {
     const sidCount = sidInfo.pathToSid.size;
