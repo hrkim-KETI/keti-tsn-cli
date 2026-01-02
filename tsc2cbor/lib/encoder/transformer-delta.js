@@ -34,7 +34,7 @@ function stripModulePrefixes(path) {
  * @param {boolean} useMap - Whether to use Map (Tag 259) or plain Object
  * @returns {Map|object} Map with Delta-SID/Absolute-SID keys and encoded values
  */
-export function transformToSidObject(
+export function transformTree(
   jsonObj,
   typeTable,
   sidInfo,
@@ -78,7 +78,7 @@ export function transformToSidObject(
 
       // Recursively transform nested objects
       // Pass current SID as parent for next level, and propagate useMap and sortMode
-      const nestedResult = transformToSidObject(
+      const nestedResult = transformTree(
         value,
         typeTable,
         sidInfo,
@@ -130,7 +130,7 @@ export function transformToSidObject(
 
       value.forEach((item) => {
         if (item && typeof item === 'object') {
-          const itemResult = transformToSidObject(
+          const itemResult = transformTree(
             item,
             typeTable,
             sidInfo,
@@ -278,7 +278,7 @@ export function transform(jsonObj, typeTable, sidInfo, options = {}) {
   // Return Map (with Tag 259) or plain Object (without Tag 259)
   // useMap=true: Better for roundtrip testing, decoder knows it's SID map
   // useMap=false: Device-compatible, smaller size, no Tag overhead
-  return transformToSidObject(jsonObj, typeTable, sidInfo, '', null, useMap, sortMode);
+  return transformTree(jsonObj, typeTable, sidInfo, '', null, useMap, sortMode);
 }
 
 /**
