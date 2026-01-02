@@ -98,7 +98,7 @@ Converts YAML/JSON configuration to CBOR with Delta-SID encoding.
 
 **Key Functions**:
 - `transform(jsonObj, typeTable, sidInfo, options)` - Main entry point
-- `transformToSidObject(...)` - Recursive transformation with parent tracking
+- `transformTree(...)` - Recursive transformation with parent tracking
 - `getTransformStats(deltaSidObj, jsonObj)` - Transformation statistics
 
 **Features**:
