@@ -34,7 +34,7 @@ export async function buildSidInfo(sidFilePath) {
       sidToIdentity: new Map(), // SID → identity name (decoding)
 
       // Parent-child relationship for Delta-SID (RFC 9254)
-      nodeInfo: new Map(),      // path → {sid, parent, deltaSid, depth}
+      nodeInfo: new Map(),      // path → {sid, parent, deltaSid, prefixedPath}
 
       // Index for fuzzy path matching (choice/case)
       leafToPaths: new Map()   // leaf node name → [fullPath1, fullPath2, ...]
@@ -397,7 +397,6 @@ export async function loadMultipleSidFiles(sidFilePaths) {
       sid,
       parent,
       deltaSid: parent !== null ? sid - parent : sid,
-      depth: parts.length,
       prefixedPath: merged.pathToPrefixed.get(path) || merged.sidToPrefixedPath.get(sid) || path
     });
   }
