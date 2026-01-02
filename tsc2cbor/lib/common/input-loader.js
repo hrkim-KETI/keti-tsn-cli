@@ -273,7 +273,6 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
       sid,
       parent,
       deltaSid: parent !== null ? sid - parent : sid,
-      depth: parts.length,
       prefixedPath: sidInfo.pathToPrefixed.get(nodePath) || sidInfo.sidToPrefixedPath.get(sid) || nodePath
     });
   }
