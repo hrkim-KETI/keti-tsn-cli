@@ -29,6 +29,7 @@ function stripModulePrefixes(path) {
  * @param {object} jsonObj - JSON object from YAML
  * @param {object} typeTable - Type table from yang-type-extractor
  * @param {object} sidInfo - SID tree from sid-resolver (with nodeInfo)
+ * @param {object} schemaInfo - Schema info (nodeOrders for sorting)
  * @param {string} currentPath - Current YANG path (for nested objects)
  * @param {number|null} parentSid - Parent's absolute SID for Delta-SID calculation
  * @param {boolean} useMap - Whether to use Map (Tag 259) or plain Object
@@ -38,6 +39,7 @@ export function transformTree(
   jsonObj,
   typeTable,
   sidInfo,
+  schemaInfo,
   currentPath = '',
   parentSid = null,
   useMap = true,
@@ -64,7 +66,7 @@ export function transformTree(
     const yangPath = currentPath ? `${currentPath}/${key}` : key;
     const yangPathNoPrefix = stripModulePrefixes(yangPath);
     const localName = key.includes(':') ? key.split(':')[1] : key;
-    const yangOrder = typeTable.nodeOrders?.get(localName) || 999999;
+    const yangOrder = schemaInfo?.nodeOrders?.get(localName) || 999999;
 
     // Handle nested objects
     if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -82,6 +84,7 @@ export function transformTree(
         value,
         typeTable,
         sidInfo,
+        schemaInfo,
         yangPath,
         currentSid,
         useMap,
@@ -134,6 +137,7 @@ export function transformTree(
             item,
             typeTable,
             sidInfo,
+            schemaInfo,
             yangPath,
             arraySid,  // Array SID becomes parent for all items
             useMap,
@@ -267,18 +271,19 @@ export function transformTree(
  * @param {object} jsonObj - JSON object from YAML
  * @param {object} typeTable - Type table
  * @param {object} sidInfo - SID tree with nodeInfo
+ * @param {object} schemaInfo - Schema info (nodeOrders for sorting)
  * @param {object} options - Transformation options
  * @param {boolean} options.useMap - Use Map (Tag 259) or plain Object (default: true)
  * @returns {Map|object} Transformed Map or Object ready for CBOR encoding
  */
-export function transform(jsonObj, typeTable, sidInfo, options = {}) {
+export function transform(jsonObj, typeTable, sidInfo, schemaInfo, options = {}) {
   const useMap = options.useMap !== undefined ? options.useMap : true;
   const sortMode = options.sortMode || 'velocity';  // Default to VelocityDriveSP mode
 
   // Return Map (with Tag 259) or plain Object (without Tag 259)
   // useMap=true: Better for roundtrip testing, decoder knows it's SID map
   // useMap=false: Device-compatible, smaller size, no Tag overhead
-  return transformTree(jsonObj, typeTable, sidInfo, '', null, useMap, sortMode);
+  return transformTree(jsonObj, typeTable, sidInfo, schemaInfo, '', null, useMap, sortMode);
 }
 
 /**

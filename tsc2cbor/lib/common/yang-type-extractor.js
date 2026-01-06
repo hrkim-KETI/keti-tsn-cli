@@ -14,7 +14,7 @@ import path from 'path';
  * Extract type information from YANG file
  * @param {string} yangFilePath - Path to .yang file
  * @param {string} yangSearchPath - Directory containing imported YANG modules
- * @returns {Promise<object>} Type table {path → typeInfo}
+ * @returns {Promise<{typeTable: object, schemaInfo: object}>} Type table and schema info
  */
 export async function extractYangTypes(yangFilePath, yangSearchPath = null) {
   try {
@@ -24,10 +24,10 @@ export async function extractYangTypes(yangFilePath, yangSearchPath = null) {
     // 2. xml2js → JavaScript Object
     const yinObj = await yinToJson(yin);
 
-    // 3. Extract type information
-    const typeTable = extractTypesFromYin(yinObj);
+    // 3. Extract type information and schema info
+    const { typeTable, schemaInfo } = extractTypesFromYin(yinObj);
 
-    return typeTable;
+    return { typeTable, schemaInfo };
 
   } catch (error) {
     throw new Error(`YANG type extraction failed: ${error.message}`);
@@ -84,7 +84,7 @@ async function yinToJson(yin) {
 /**
  * Extract type information from YIN object
  * @param {object} yinObj - Parsed YIN object
- * @returns {object} Type table
+ * @returns {{typeTable: object, schemaInfo: object}} Type table and schema info
  */
 function extractTypesFromYin(yinObj) {
   const typeTable = {
@@ -92,8 +92,10 @@ function extractTypesFromYin(yinObj) {
     types: new Map(),                // path → type info
 
     // Typedefs
-    typedefs: new Map(),             // typedef name → type definition
+    typedefs: new Map()              // typedef name → type definition
+  };
 
+  const schemaInfo = {
     // Node order (for VelocityDriveSP sorting)
     // Map: local node name → order (within module)
     nodeOrders: new Map()            // localName → order
@@ -117,15 +119,15 @@ function extractTypesFromYin(yinObj) {
   }
 
   // Initialize order counter
-  typeTable._orderCounter = 0;
+  schemaInfo._orderCounter = 0;
 
   // Extract container/list/leaf types
-  extractDataTypes(module, '', typeTable, moduleName);
+  extractDataTypes(module, '', typeTable, schemaInfo, moduleName);
 
   // Remove internal counter before returning
-  delete typeTable._orderCounter;
+  delete schemaInfo._orderCounter;
 
-  return typeTable;
+  return { typeTable, schemaInfo };
 }
 
 /**
@@ -147,7 +149,7 @@ function extractTypedef(typedef, typeTable) {
 /**
  * Extract data types from container/list/leaf nodes
  */
-function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
+function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, depth = 0) {
   if (depth > 20) return; // Prevent infinite recursion
 
   // Extract from container
@@ -158,11 +160,11 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
       const newPath = currentPath ? `${currentPath}/${containerName}` : containerName;
 
       // Record node order
-      if (!typeTable.nodeOrders.has(containerName)) {
-        typeTable.nodeOrders.set(containerName, typeTable._orderCounter++);
+      if (!schemaInfo.nodeOrders.has(containerName)) {
+        schemaInfo.nodeOrders.set(containerName, schemaInfo._orderCounter++);
       }
 
-      extractDataTypes(container, newPath, typeTable, moduleName, depth + 1);
+      extractDataTypes(container, newPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 
@@ -174,11 +176,11 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
       const newPath = currentPath ? `${currentPath}/${listName}` : listName;
 
       // Record node order
-      if (!typeTable.nodeOrders.has(listName)) {
-        typeTable.nodeOrders.set(listName, typeTable._orderCounter++);
+      if (!schemaInfo.nodeOrders.has(listName)) {
+        schemaInfo.nodeOrders.set(listName, schemaInfo._orderCounter++);
       }
 
-      extractDataTypes(list, newPath, typeTable, moduleName, depth + 1);
+      extractDataTypes(list, newPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 
@@ -186,7 +188,7 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
   if (node.choice) {
     const choices = Array.isArray(node.choice) ? node.choice : [node.choice];
     choices.forEach(choiceNode => {
-      processChoiceNode(choiceNode, currentPath, typeTable, moduleName, depth + 1);
+      processChoiceNode(choiceNode, currentPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 
@@ -198,8 +200,8 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
       const leafPath = currentPath ? `${currentPath}/${leafName}` : leafName;
 
       // Record node order
-      if (!typeTable.nodeOrders.has(leafName)) {
-        typeTable.nodeOrders.set(leafName, typeTable._orderCounter++);
+      if (!schemaInfo.nodeOrders.has(leafName)) {
+        schemaInfo.nodeOrders.set(leafName, schemaInfo._orderCounter++);
       }
 
       if (leaf.type) {
@@ -236,8 +238,8 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
       const leafListPath = currentPath ? `${currentPath}/${leafListName}` : leafListName;
 
       // Record node order
-      if (!typeTable.nodeOrders.has(leafListName)) {
-        typeTable.nodeOrders.set(leafListName, typeTable._orderCounter++);
+      if (!schemaInfo.nodeOrders.has(leafListName)) {
+        schemaInfo.nodeOrders.set(leafListName, schemaInfo._orderCounter++);
       }
 
       if (leafList.type) {
@@ -267,7 +269,7 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
   if (node.grouping) {
     const groupings = Array.isArray(node.grouping) ? node.grouping : [node.grouping];
     groupings.forEach(grouping => {
-      extractDataTypes(grouping, currentPath, typeTable, moduleName, depth + 1);
+      extractDataTypes(grouping, currentPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 }
@@ -275,14 +277,14 @@ function extractDataTypes(node, currentPath, typeTable, moduleName, depth = 0) {
 /**
  * Process YIN choice node and recurse into children
  */
-function processChoiceNode(choiceNode, currentPath, typeTable, moduleName, depth) {
+function processChoiceNode(choiceNode, currentPath, typeTable, schemaInfo, moduleName, depth) {
   if (!choiceNode) return;
 
   // Handle explicit cases
   if (choiceNode.case) {
     const cases = Array.isArray(choiceNode.case) ? choiceNode.case : [choiceNode.case];
     cases.forEach(caseNode => {
-      extractDataTypes(caseNode, currentPath, typeTable, moduleName, depth + 1);
+      extractDataTypes(caseNode, currentPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 
@@ -292,7 +294,7 @@ function processChoiceNode(choiceNode, currentPath, typeTable, moduleName, depth
     if (!choiceNode[key]) return;
     const elements = Array.isArray(choiceNode[key]) ? choiceNode[key] : [choiceNode[key]];
     elements.forEach(element => {
-      extractDataTypes(element, currentPath, typeTable, moduleName, depth + 1);
+      extractDataTypes(element, currentPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   });
 }

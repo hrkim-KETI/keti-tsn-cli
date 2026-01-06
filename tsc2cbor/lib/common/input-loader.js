@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -52,7 +52,7 @@ async function isCacheValid(cacheFile, yangCacheDir) {
 /**
  * Serialize Maps and Sets to JSON-compatible format
  */
-function serializeData(sidInfo, typeTable) {
+function serializeData(sidInfo, typeTable, schemaInfo) {
   return {
     version: CACHE_VERSION,
     timestamp: Date.now(),
@@ -69,8 +69,10 @@ function serializeData(sidInfo, typeTable) {
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
-      typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)]),
-      nodeOrders: [...typeTable.nodeOrders]
+      typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)])
+    },
+    schemaInfo: {
+      nodeOrders: [...schemaInfo.nodeOrders]
     }
   };
 }
@@ -112,11 +114,14 @@ function deserializeData(data) {
 
   const typeTable = {
     types: new Map(data.typeTable.types.map(([k, v]) => [k, deserializeTypeInfo(v)])),
-    typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)])),
-    nodeOrders: new Map(data.typeTable.nodeOrders)
+    typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)]))
   };
 
-  return { sidInfo, typeTable };
+  const schemaInfo = {
+    nodeOrders: new Map(data.schemaInfo.nodeOrders)
+  };
+
+  return { sidInfo, typeTable, schemaInfo };
 }
 
 /**
@@ -153,8 +158,8 @@ async function loadFromCache(cacheFile, verbose) {
 /**
  * Save to cache file
  */
-async function saveToCache(cacheFile, sidInfo, typeTable, verbose) {
-  const data = serializeData(sidInfo, typeTable);
+async function saveToCache(cacheFile, sidInfo, typeTable, schemaInfo, verbose) {
+  const data = serializeData(sidInfo, typeTable, schemaInfo);
   await fs.promises.writeFile(cacheFile, JSON.stringify(data), 'utf8');
 
   if (verbose) {
@@ -172,7 +177,7 @@ async function saveToCache(cacheFile, sidInfo, typeTable, verbose) {
  * @param {boolean} verbose - Enable verbose logging
  * @param {object} options - Additional options
  * @param {boolean} options.noCache - Disable cache (force reload)
- * @returns {Promise<{sidInfo: object, typeTable: object}>}
+ * @returns {Promise<{sidInfo: object, typeTable: object, schemaInfo: object}>}
  */
 export async function loadYangInputs(yangCacheDir, verbose = false, options = {}) {
   const cacheFile = getCacheFilePath(yangCacheDir);
@@ -286,29 +291,32 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     console.log(`  - Found ${yangFiles.length} YANG files`);
   }
 
-  // Step 5: Initialize merged type table structure
+  // Step 5: Initialize merged type table and schema info structures
   const typeTable = {
     types: new Map(),
-    typedefs: new Map(),
+    typedefs: new Map()
+  };
+
+  const schemaInfo = {
     nodeOrders: new Map()
   };
 
   // Load all YANG files in parallel for better performance
-  const typeTables = await Promise.all(
+  const yangResults = await Promise.all(
     yangFiles.map(yangFile => extractYangTypes(yangFile, yangCacheDir))
   );
 
-  // Merge all type tables
-  for (const table of typeTables) {
-    for (const [path, type] of table.types) {
+  // Merge all type tables and schema infos
+  for (const result of yangResults) {
+    for (const [path, type] of result.typeTable.types) {
       typeTable.types.set(path, type);
     }
-    for (const [name, typedef] of table.typedefs) {
+    for (const [name, typedef] of result.typeTable.typedefs) {
       typeTable.typedefs.set(name, typedef);
     }
-    if (table.nodeOrders) {
-      for (const [nodeName, order] of table.nodeOrders) {
-        typeTable.nodeOrders.set(nodeName, order);
+    if (result.schemaInfo?.nodeOrders) {
+      for (const [nodeName, order] of result.schemaInfo.nodeOrders) {
+        schemaInfo.nodeOrders.set(nodeName, order);
       }
     }
   }
@@ -370,7 +378,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   // Step 8: Save to cache for future fast loading
   if (!options.noCache) {
     try {
-      await saveToCache(cacheFile, sidInfo, typeTable, verbose);
+      await saveToCache(cacheFile, sidInfo, typeTable, schemaInfo, verbose);
     } catch (err) {
       // Cache save failure is not critical
       if (verbose) {
@@ -379,5 +387,5 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
   }
 
-  return { sidInfo, typeTable };
+  return { sidInfo, typeTable, schemaInfo };
 }
