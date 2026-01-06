@@ -54,6 +54,7 @@ class Tsc2CborConverter {
     this.yangCacheDir = yangCacheDir;
     this.sidInfo = null;
     this.typeTable = null;
+    this.schemaInfo = null;
     this.cacheLoaded = false;
   }
 
@@ -64,9 +65,10 @@ class Tsc2CborConverter {
   async loadInputs(verbose = false) {
     if (this.cacheLoaded) return;
 
-    const { sidInfo, typeTable } = await loadYangInputs(this.yangCacheDir, verbose);
+    const { sidInfo, typeTable, schemaInfo } = await loadYangInputs(this.yangCacheDir, verbose);
     this.sidInfo = sidInfo;
     this.typeTable = typeTable;
+    this.schemaInfo = schemaInfo;
     this.cacheLoaded = true;
   }
 
@@ -153,7 +155,7 @@ class Tsc2CborConverter {
         console.log('Transformation: JSON -> Delta-SID Object...');
       }
 
-      transformed = transform(jsonData, this.typeTable, this.sidInfo, {
+      transformed = transform(jsonData, this.typeTable, this.sidInfo, this.schemaInfo, {
         useDeltaSid: true,
         rootPath: '',
         useMap: true,
