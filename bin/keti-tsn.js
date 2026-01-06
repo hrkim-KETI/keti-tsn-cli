@@ -58,6 +58,7 @@ Options:
   -o, --output <file>   Output file
   -c, --cache <dir>     YANG cache directory
   --format <type>       Output format: rfc7951 | instance-id
+  --sort-mode <mode>    CBOR key sort mode: velocity | rfc8949 (default: velocity)
   -v, --verbose         Verbose output
   -V, --version         Show version
   -h, --help            Show help
@@ -84,6 +85,7 @@ function parseArgs(args) {
     output: null,
     cache: null,
     format: 'rfc7951',
+    sortMode: 'velocity',
     verbose: false
   };
 
@@ -105,6 +107,8 @@ function parseArgs(args) {
       options.cache = args[++i];
     } else if (arg === '--format') {
       options.format = args[++i];
+    } else if (arg === '--sort-mode') {
+      options.sortMode = args[++i];
     } else if (arg === '-v' || arg === '--verbose') {
       options.verbose = true;
     } else if (!arg.startsWith('-')) {
