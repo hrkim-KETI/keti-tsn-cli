@@ -149,26 +149,13 @@ class Tsc2CborConverter {
         console.log(`  Output entries: ${transformStats.outputEntries}`);
       }
     } else {
-      // RFC 7951 format - existing pipeline
-      if (verbose) {
-        console.log('\nDetected RFC 7951 format');
-        console.log('Transformation: JSON -> Delta-SID Object...');
-      }
-
-      transformed = transform(jsonData, this.typeTable, this.sidInfo, this.schemaInfo, {
-        useDeltaSid: true,
-        rootPath: '',
-        useMap: true,
-        sortMode
-      });
-
-      transformStats = getTransformStats(jsonData, transformed);
-
-      if (verbose) {
-        console.log(`  Original keys: ${transformStats.originalKeys}`);
-        console.log(`  Transformed keys: ${transformStats.transformedKeys}`);
-        console.log(`  Size ratio: ${(transformStats.transformedKeys / transformStats.originalKeys * 100).toFixed(1)}%`);
-      }
+      // RFC 7951 Tree format is not supported (target device cannot receive it)
+      throw new Error(
+        'Tree format (RFC 7951) is not supported.\n' +
+        'Please use instance-identifier format instead.\n' +
+        'Example:\n' +
+        '  - /module:container/list[key=\'value\']/leaf: value'
+      );
     }
 
     // Step 3: Encode to CBOR
