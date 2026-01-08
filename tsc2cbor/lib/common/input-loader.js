@@ -284,14 +284,17 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
   // Step 3.5: Build reverse-lookup map (SID → node info) for decoding
   // This avoids rebuilding the map on every decode call
-  sidInfo.sidInfoMap = new Map();
+  // Naming: nodeInfo (path → info) vs nodeInfoBySid (SID → info)
+  sidInfo.nodeInfoBySid = new Map();
 
   for (const [path, nodeInfo] of sidInfo.nodeInfo) {
     const prefixedPath = nodeInfo.prefixedPath || sidInfo.pathToPrefixed?.get(path) || sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-    sidInfo.sidInfoMap.set(nodeInfo.sid, {
-      ...nodeInfo,
+    // Note: sid is already the Map key, so we only include parent and deltaSid from nodeInfo
+    sidInfo.nodeInfoBySid.set(nodeInfo.sid, {
+      parent: nodeInfo.parent,
+      deltaSid: nodeInfo.deltaSid,
       path,
       prefixedPath,
       localName: localPrefixed,
@@ -301,15 +304,15 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
   // Also add entries from sidToPath for paths without nodeInfo
   for (const [sid, path] of sidInfo.sidToPath) {
-    if (!sidInfo.sidInfoMap.has(sid)) {
+    if (!sidInfo.nodeInfoBySid.has(sid)) {
       const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
       const prefixedSegments = prefixedPath.split('/').filter(Boolean);
       const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-      sidInfo.sidInfoMap.set(sid, {
-        sid,
-        path,
+      // Note: sid is already the Map key, no need to store it in value
+      sidInfo.nodeInfoBySid.set(sid, {
         parent: null,
         deltaSid: sid,
+        path,
         prefixedPath,
         localName: localPrefixed,
         strippedLocalName: path.split('/').pop()
