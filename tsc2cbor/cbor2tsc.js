@@ -15,7 +15,7 @@
 import yaml from 'js-yaml';
 import { loadYangInputs } from './lib/common/input-loader.js';
 import { detransform, getDetransformStats } from './lib/decoder/detransformer-delta.js';
-import { detransformToInstanceId } from './lib/decoder/detransformer-instance-id.js';
+// Note: detransformer-instance-id.js is kept for potential future use
 import { decodeFromCbor } from './lib/common/cbor-encoder.js';
 import fs from 'fs';
 import path from 'path';
@@ -82,20 +82,18 @@ class Cbor2TscConverter {
   }
 
   /**
-   * Convert CBOR buffer to YAML
+   * Convert CBOR buffer to YAML (RFC 7951 Tree format)
    * @param {Buffer} cborBuffer - CBOR data as Buffer
    * @param {object} options - Conversion options
    * @param {string} [options.outputFile] - Output YAML file path (optional)
    * @param {boolean} [options.verbose=false] - Verbose output
    * @param {boolean} [options.skipNesting=false] - Skip path nesting (flat output)
-   * @param {string} [options.outputFormat='rfc7951'] - Output format: 'rfc7951' or 'instance-id'
    * @returns {Promise<{yaml: string, nested: object, flat: object, stats: object}>}
    */
   async convertBuffer(cborBuffer, options = {}) {
     const verbose = options.verbose || false;
     const skipNesting = options.skipNesting || false;
     const outputFile = options.outputFile || null;
-    const outputFormat = options.outputFormat || 'rfc7951';
 
     await this.loadInputs(verbose);
 
@@ -111,94 +109,52 @@ class Cbor2TscConverter {
       console.log(`  Delta-SID keys: ${deltaSidKeys}`);
     }
 
-    let result;
-    let yamlString;
-    let stats;
-
-    if (outputFormat === 'instance-id') {
-      // Instance-Identifier format output
-      if (verbose) {
-        console.log('\nDetransformation: Delta-SID -> Instance-Identifier...');
-      }
-
-      const instanceIdEntries = detransformToInstanceId(decoded, this.typeTable, this.sidInfo);
-
-      if (verbose) {
-        console.log(`  Instance-ID entries: ${instanceIdEntries.length}`);
-      }
-
-      // Convert to YAML
-      yamlString = yaml.dump(instanceIdEntries, {
-        indent: 2,
-        lineWidth: -1,
-        noRefs: true,
-        sortKeys: false
-      });
-
-      const cborSize = cborBuffer.length;
-      const yamlSize = Buffer.byteLength(yamlString, 'utf8');
-
-      stats = {
-        cborSize,
-        yamlSize,
-        entryCount: instanceIdEntries.length,
-        expansionRatio: (yamlSize / cborSize).toFixed(2)
-      };
-
-      result = {
-        yaml: yamlString,
-        instanceIdEntries,
-        stats
-      };
-
-    } else {
-      // RFC 7951 format output (default)
-      if (verbose) {
-        console.log('\nDetransformation: Delta-SID -> Nested JSON...');
-      }
-
-      // Step 2: Detransform Delta-SID → Nested JSON
-      const flat = detransform(decoded, this.typeTable, this.sidInfo);
-      const nested = skipNesting ? flat : flat;  // detransform already nests
-
-      const detransformStats = getDetransformStats(decoded, nested);
-
-      if (verbose) {
-        console.log(`  Delta-SID keys: ${detransformStats.deltaSidKeys}`);
-        console.log(`  Nested keys: ${detransformStats.nestedKeys}`);
-        console.log(`  Expansion ratio: ${detransformStats.expansionRatio.toFixed(2)}x`);
-        console.log(`  Delta-SID size: ${detransformStats.deltaSidSize} bytes`);
-        console.log(`  Nested size: ${detransformStats.nestedSize} bytes`);
-      }
-
-      // Step 3: Convert to YAML
-      yamlString = yaml.dump(nested, {
-        indent: 2,
-        lineWidth: -1,
-        noRefs: true,
-        sortKeys: false
-      });
-
-      // Step 4: Calculate statistics
-      const cborSize = cborBuffer.length;
-      const jsonSize = Buffer.byteLength(JSON.stringify(nested), 'utf8');
-      const yamlSize = Buffer.byteLength(yamlString, 'utf8');
-
-      stats = {
-        cborSize,
-        jsonSize,
-        yamlSize,
-        expansionRatio: (yamlSize / cborSize).toFixed(2),
-        ...detransformStats
-      };
-
-      result = {
-        yaml: yamlString,
-        nested,
-        flat,
-        stats
-      };
+    // RFC 7951 format output (Tree structure)
+    if (verbose) {
+      console.log('\nDetransformation: Delta-SID -> Nested JSON...');
     }
+
+    // Step 2: Detransform Delta-SID → Nested JSON
+    const flat = detransform(decoded, this.typeTable, this.sidInfo);
+    const nested = skipNesting ? flat : flat;  // detransform already nests
+
+    const detransformStats = getDetransformStats(decoded, nested);
+
+    if (verbose) {
+      console.log(`  Delta-SID keys: ${detransformStats.deltaSidKeys}`);
+      console.log(`  Nested keys: ${detransformStats.nestedKeys}`);
+      console.log(`  Expansion ratio: ${detransformStats.expansionRatio.toFixed(2)}x`);
+      console.log(`  Delta-SID size: ${detransformStats.deltaSidSize} bytes`);
+      console.log(`  Nested size: ${detransformStats.nestedSize} bytes`);
+    }
+
+    // Step 3: Convert to YAML
+    const yamlString = yaml.dump(nested, {
+      indent: 2,
+      lineWidth: -1,
+      noRefs: true,
+      sortKeys: false
+    });
+
+    // Step 4: Calculate statistics
+    const cborSize = cborBuffer.length;
+    const jsonSize = Buffer.byteLength(JSON.stringify(nested), 'utf8');
+    const yamlSize = Buffer.byteLength(yamlString, 'utf8');
+
+    const stats = {
+      cborSize,
+      jsonSize,
+      yamlSize,
+      expansionRatio: (yamlSize / cborSize).toFixed(2),
+      ...detransformStats
+    };
+
+    const result = {
+      yaml: yamlString,
+      nested,
+      flat,
+      stats
+    };
 
     // Save to file (if outputFile specified)
     if (outputFile) {
@@ -213,12 +169,7 @@ class Cbor2TscConverter {
       console.log('\nConversion Statistics:');
       console.log(`  CBOR size: ${stats.cborSize} bytes`);
       console.log(`  YAML size: ${stats.yamlSize} bytes`);
-      if (stats.jsonSize) {
-        console.log(`  JSON size: ${stats.jsonSize} bytes`);
-      }
-      if (stats.entryCount) {
-        console.log(`  Entry count: ${stats.entryCount}`);
-      }
+      console.log(`  JSON size: ${stats.jsonSize} bytes`);
     }
 
     return result;

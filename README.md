@@ -68,6 +68,27 @@ npm install
 ./keti-tsn decode response.cbor -o response.yaml
 ```
 
+### 입력/출력 형식
+
+**인코딩 입력 (Instance-Identifier 형식):**
+
+```yaml
+- /ietf-interfaces:interfaces/interface[name='1']/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-sched-bridge:gate-parameter-table/gate-enabled: true
+- /ietf-interfaces:interfaces/interface[name='1']/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-sched-bridge:gate-parameter-table/admin-gate-states: 255
+```
+
+**디코딩 출력 (Tree 형식, RFC 7951):**
+
+```yaml
+ietf-interfaces:interfaces:
+  interface:
+    - name: '1'
+      ieee802-dot1q-bridge:bridge-port:
+        ieee802-dot1q-sched-bridge:gate-parameter-table:
+          gate-enabled: true
+          admin-gate-states: 255
+```
+
 ### 장비 명령 (디바이스 필요)
 
 ```bash
@@ -97,7 +118,7 @@ npm install
 | `-d, --device <path>` | 장치 경로 (기본값: `/dev/ttyACM0`) |
 | `-o, --output <file>` | 출력 파일 |
 | `-c, --cache <dir>` | YANG 캐시 디렉토리 |
-| `--format <type>` | 출력 형식: `rfc7951` \| `instance-id` |
+| `--sort-mode <mode>` | CBOR 키 정렬: `velocity` \| `rfc8949` (기본값: `velocity`) |
 | `-v, --verbose` | 상세 출력 |
 | `-V, --version` | 버전 표시 |
 | `-h, --help` | 도움말 표시 |
