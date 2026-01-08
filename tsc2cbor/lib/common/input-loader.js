@@ -282,6 +282,41 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     });
   }
 
+  // Step 3.5: Build reverse-lookup map (SID → node info) for decoding
+  // This avoids rebuilding the map on every decode call
+  sidInfo.sidInfoMap = new Map();
+
+  for (const [path, nodeInfo] of sidInfo.nodeInfo) {
+    const prefixedPath = nodeInfo.prefixedPath || sidInfo.pathToPrefixed?.get(path) || sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+    const prefixedSegments = prefixedPath.split('/').filter(Boolean);
+    const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
+    sidInfo.sidInfoMap.set(nodeInfo.sid, {
+      ...nodeInfo,
+      path,
+      prefixedPath,
+      localName: localPrefixed,
+      strippedLocalName: path.split('/').pop()
+    });
+  }
+
+  // Also add entries from sidToPath for paths without nodeInfo
+  for (const [sid, path] of sidInfo.sidToPath) {
+    if (!sidInfo.sidInfoMap.has(sid)) {
+      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
+      const prefixedSegments = prefixedPath.split('/').filter(Boolean);
+      const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
+      sidInfo.sidInfoMap.set(sid, {
+        sid,
+        path,
+        parent: null,
+        deltaSid: sid,
+        prefixedPath,
+        localName: localPrefixed,
+        strippedLocalName: path.split('/').pop()
+      });
+    }
+  }
+
   // Step 4: Load all YANG files from cache directory
   const yangFiles = allFiles
     .filter(f => f.endsWith('.yang'))

@@ -236,7 +236,8 @@ function extractInstanceIds(cborData, sidInfoMap, typeTable, sidInfo, parentSid,
  * @returns {Array<Object>} Array of instance-identifier entries
  */
 export function detransformToInstanceId(cborData, typeTable, sidInfo) {
-  const sidInfoMap = buildSidInfoMap(sidInfo);
+  // Use cached sidInfoMap if available, otherwise build it
+  const sidInfoMap = sidInfo.sidInfoMap || buildSidInfoMap(sidInfo);
   const results = [];
   const listKeys = new Map();
 

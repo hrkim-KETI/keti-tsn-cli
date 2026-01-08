@@ -163,7 +163,8 @@ function cborToJsonDelta(cborData, sidInfoMap, typeTable, sidInfo, parentSid = n
  * @returns {object} Flat object with YANG paths as keys
  */
 export function detransformFromDeltaSid(cborData, typeTable, sidInfo) {
-  const sidInfoMap = buildSidInfoMap(sidInfo);
+  // Use cached sidInfoMap if available, otherwise build it
+  const sidInfoMap = sidInfo.sidInfoMap || buildSidInfoMap(sidInfo);
 
   // Convert to Map if needed
   const cborMap = cborData instanceof Map ? cborData : new Map(Object.entries(cborData));
@@ -183,7 +184,8 @@ export function detransformFromDeltaSid(cborData, typeTable, sidInfo) {
  * @returns {object} Nested object
  */
 export function detransform(cborData, typeTable, sidInfo) {
-  const sidInfoMap = buildSidInfoMap(sidInfo);
+  // Use cached sidInfoMap if available, otherwise build it
+  const sidInfoMap = sidInfo.sidInfoMap || buildSidInfoMap(sidInfo);
 
   // Convert to Map if needed, preserving numeric keys
   let cborMap;
