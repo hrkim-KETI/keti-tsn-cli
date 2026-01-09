@@ -15,7 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-const CACHE_VERSION = 5;
+// v6: Removed pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed (use nodeInfo/nodeInfoBySid)
+const CACHE_VERSION = 6;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -57,15 +58,15 @@ function serializeData(sidInfo, typeTable, schemaInfo) {
     version: CACHE_VERSION,
     timestamp: Date.now(),
     sidInfo: {
-      pathToSid: [...sidInfo.pathToSid],
-      sidToPath: [...sidInfo.sidToPath],
+      // Core maps (kept)
       prefixedPathToSid: [...sidInfo.prefixedPathToSid],
-      sidToPrefixedPath: [...sidInfo.sidToPrefixedPath],
-      pathToPrefixed: [...sidInfo.pathToPrefixed],
       identityToSid: [...sidInfo.identityToSid],
       sidToIdentity: [...sidInfo.sidToIdentity],
       nodeInfo: [...sidInfo.nodeInfo],
+      nodeInfoBySid: [...sidInfo.nodeInfoBySid],
       leafToPaths: [...sidInfo.leafToPaths]
+      // Removed: pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed
+      // (use nodeInfo/nodeInfoBySid instead)
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
@@ -101,15 +102,14 @@ function deserializeData(data) {
   }
 
   const sidInfo = {
-    pathToSid: new Map(data.sidInfo.pathToSid),
-    sidToPath: new Map(data.sidInfo.sidToPath),
+    // Core maps (kept)
     prefixedPathToSid: new Map(data.sidInfo.prefixedPathToSid),
-    sidToPrefixedPath: new Map(data.sidInfo.sidToPrefixedPath),
-    pathToPrefixed: new Map(data.sidInfo.pathToPrefixed),
     identityToSid: new Map(data.sidInfo.identityToSid),
     sidToIdentity: new Map(data.sidInfo.sidToIdentity),
     nodeInfo: new Map(data.sidInfo.nodeInfo),
+    nodeInfoBySid: new Map(data.sidInfo.nodeInfoBySid),
     leafToPaths: new Map(data.sidInfo.leafToPaths)
+    // Removed: pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed
   };
 
   const typeTable = {
@@ -288,7 +288,8 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   sidInfo.nodeInfoBySid = new Map();
 
   for (const [path, nodeInfo] of sidInfo.nodeInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || sidInfo.pathToPrefixed?.get(path) || sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+    // nodeInfo.prefixedPath is already set in Step 3
+    const prefixedPath = nodeInfo.prefixedPath || path;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
     // Note: sid is already the Map key, so we only include parent and deltaSid from nodeInfo
@@ -302,23 +303,12 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     });
   }
 
-  // Also add entries from sidToPath for paths without nodeInfo
-  for (const [sid, path] of sidInfo.sidToPath) {
-    if (!sidInfo.nodeInfoBySid.has(sid)) {
-      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
-      const prefixedSegments = prefixedPath.split('/').filter(Boolean);
-      const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-      // Note: sid is already the Map key, no need to store it in value
-      sidInfo.nodeInfoBySid.set(sid, {
-        parent: null,
-        deltaSid: sid,
-        path,
-        prefixedPath,
-        localName: localPrefixed,
-        strippedLocalName: path.split('/').pop()
-      });
-    }
-  }
+  // Step 3.6: Clean up intermediate Maps (no longer needed after nodeInfo/nodeInfoBySid built)
+  // These maps were used during initialization but are redundant now
+  delete sidInfo.pathToSid;
+  delete sidInfo.sidToPath;
+  delete sidInfo.sidToPrefixedPath;
+  delete sidInfo.pathToPrefixed;
 
   // Step 4: Load all YANG files from cache directory
   const yangFiles = allFiles

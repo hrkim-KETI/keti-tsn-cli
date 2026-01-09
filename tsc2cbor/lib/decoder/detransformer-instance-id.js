@@ -39,9 +39,7 @@ function buildSidInfoMap(sidInfo) {
   const nodeInfoBySid = new Map();
 
   for (const [path, nodeInfo] of sidInfo.nodeInfo) {
-    const prefixedPath = nodeInfo.prefixedPath ||
-      sidInfo.pathToPrefixed?.get(path) ||
-      sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+    const prefixedPath = nodeInfo.prefixedPath || path;
 
     // Note: sid is already the Map key, only include parent and deltaSid from nodeInfo
     nodeInfoBySid.set(nodeInfo.sid, {
@@ -53,19 +51,7 @@ function buildSidInfoMap(sidInfo) {
     });
   }
 
-  for (const [sid, path] of sidInfo.sidToPath) {
-    if (!nodeInfoBySid.has(sid)) {
-      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
-      // Note: sid is already the Map key, no need to store it in value
-      nodeInfoBySid.set(sid, {
-        parent: null,
-        deltaSid: sid,
-        path,
-        prefixedPath,
-        localName: path.split('/').pop()
-      });
-    }
-  }
+  // Note: sidToPath fallback removed - nodeInfoBySid should be pre-built by loadInputs()
 
   return nodeInfoBySid;
 }

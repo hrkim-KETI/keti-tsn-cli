@@ -160,9 +160,11 @@ export function resolvePathToSid(path, sidInfo, contextPath = '') {
   if (sidInfo.prefixedPathToSid?.has(fullPath)) {
     return sidInfo.prefixedPathToSid.get(fullPath);
   }
+  // Use nodeInfo instead of pathToSid
   const fullPathStripped = stripPrefixes(fullPath);
-  if (sidInfo.pathToSid.has(fullPathStripped)) {
-    return sidInfo.pathToSid.get(fullPathStripped);
+  const nodeInfo = sidInfo.nodeInfo?.get(fullPathStripped);
+  if (nodeInfo) {
+    return nodeInfo.sid;
   }
 
   // 2. Fuzzy match fallback for choice/case nodes absent in YAML
@@ -176,7 +178,7 @@ export function resolvePathToSid(path, sidInfo, contextPath = '') {
 
   // If only one candidate, it's likely the correct one.
   if (candidatePaths.length === 1) {
-    return sidInfo.pathToSid.get(candidatePaths[0]);
+    return sidInfo.nodeInfo?.get(candidatePaths[0])?.sid ?? null;
   }
 
   // Multiple candidates, find best match using context.
@@ -205,11 +207,11 @@ export function resolvePathToSid(path, sidInfo, contextPath = '') {
   }
 
   if (bestMatch) {
-    return sidInfo.pathToSid.get(bestMatch);
+    return sidInfo.nodeInfo?.get(bestMatch)?.sid ?? null;
   }
 
   // If no context match, return first candidate as a last resort
-  return sidInfo.pathToSid.get(candidatePaths[0]);
+  return sidInfo.nodeInfo?.get(candidatePaths[0])?.sid ?? null;
 }
 
 /**
@@ -219,7 +221,8 @@ export function resolvePathToSid(path, sidInfo, contextPath = '') {
  * @returns {string|null} YANG path or null if not found
  */
 export function resolveSidToPath(sid, sidInfo) {
-  return sidInfo.sidToPath.get(sid) || null;
+  // Use nodeInfoBySid instead of sidToPath
+  return sidInfo.nodeInfoBySid?.get(sid)?.path || null;
 }
 
 /**
