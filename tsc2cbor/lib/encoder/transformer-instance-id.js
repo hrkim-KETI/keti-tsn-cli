@@ -91,9 +91,10 @@ function resolveSid(prefixedPath, strippedPath, sidInfo) {
   if (sidInfo.prefixedPathToSid?.has(prefixedPath)) {
     return sidInfo.prefixedPathToSid.get(prefixedPath);
   }
-  // Fall back to stripped path
-  if (sidInfo.pathToSid?.has(strippedPath)) {
-    return sidInfo.pathToSid.get(strippedPath);
+  // Fall back to stripped path (use nodeInfo instead of pathToSid)
+  const nodeInfo = sidInfo.nodeInfo?.get(strippedPath);
+  if (nodeInfo) {
+    return nodeInfo.sid;
   }
   return null;
 }
@@ -216,11 +217,12 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidInfo,
         for (const entry of listArray) {
           let matches = true;
           for (const { keyName, keyValue } of comp.keys) {
-            // Find key SID
+            // Find key SID (use nodeInfo instead of pathToSid)
             const keyPath = `${strippedPath}/${keyName}`;
-            const keySid = sidInfo.pathToSid?.get(keyPath);
+            const keyNodeInfoForSid = sidInfo.nodeInfo?.get(keyPath);
+            const keySid = keyNodeInfoForSid?.sid;
 
-            if (keySid === null) continue;
+            if (keySid == null) continue;
 
             // Calculate key's Delta-SID
             const keyNodeInfo = getNodeInfo(keyPath, sidInfo);
@@ -248,12 +250,12 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidInfo,
           listEntry = useMap ? new Map() : {};
 
           for (const { keyName, keyValue } of comp.keys) {
+            // Find key SID (use nodeInfo instead of pathToSid)
             const keyPath = `${strippedPath}/${keyName}`;
-            const keySid = sidInfo.pathToSid?.get(keyPath);
-
-            if (keySid === null) continue;
-
             const keyNodeInfo = getNodeInfo(keyPath, sidInfo);
+            const keySid = keyNodeInfo?.sid;
+
+            if (keySid == null) continue;
             let keyEncodedKey;
             if (keyNodeInfo && keyNodeInfo.parent === currentSid) {
               keyEncodedKey = keyNodeInfo.deltaSid;

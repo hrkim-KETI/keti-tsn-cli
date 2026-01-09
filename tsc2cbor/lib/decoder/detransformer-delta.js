@@ -17,7 +17,7 @@ function buildSidInfoMap(sidInfo) {
 
   // Use nodeInfo which has parent relationships
   for (const [path, nodeInfo] of sidInfo.nodeInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || sidInfo.pathToPrefixed?.get(path) || sidInfo.sidToPrefixedPath?.get(nodeInfo.sid) || path;
+    const prefixedPath = nodeInfo.prefixedPath || path;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
     // Note: sid is already the Map key, only include parent and deltaSid from nodeInfo
@@ -31,23 +31,7 @@ function buildSidInfoMap(sidInfo) {
     });
   }
 
-  // Also add entries from sidToPath for paths without nodeInfo
-  for (const [sid, path] of sidInfo.sidToPath) {
-    if (!nodeInfoBySid.has(sid)) {
-      const prefixedPath = sidInfo.sidToPrefixedPath?.get(sid) || path;
-      const prefixedSegments = prefixedPath.split('/').filter(Boolean);
-      const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-      // Note: sid is already the Map key, no need to store it in value
-      nodeInfoBySid.set(sid, {
-        parent: null,
-        deltaSid: sid,
-        path,
-        prefixedPath,
-        localName: localPrefixed,
-        strippedLocalName: path.split('/').pop()
-      });
-    }
-  }
+  // Note: sidToPath fallback removed - nodeInfoBySid should be pre-built by loadInputs()
 
   return nodeInfoBySid;
 }
