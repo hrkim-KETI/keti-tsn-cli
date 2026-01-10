@@ -92,7 +92,7 @@ function resolveSid(prefixedPath, strippedPath, sidInfo) {
     return sidInfo.prefixedPathToSid.get(prefixedPath);
   }
   // Fall back to stripped path (use nodeInfo instead of pathToSid)
-  const nodeInfo = sidInfo.nodeInfo?.get(strippedPath);
+  const nodeInfo = sidInfo.pathToInfo?.get(strippedPath);
   if (nodeInfo) {
     return nodeInfo.sid;
   }
@@ -106,7 +106,7 @@ function resolveSid(prefixedPath, strippedPath, sidInfo) {
  * @returns {Object|null} Node info with parent and deltaSid
  */
 function getNodeInfo(strippedPath, sidInfo) {
-  return sidInfo.nodeInfo?.get(strippedPath) || null;
+  return sidInfo.pathToInfo?.get(strippedPath) || null;
 }
 
 /**
@@ -219,7 +219,7 @@ export function transformInstanceIdentifier(instanceIdArray, typeTable, sidInfo,
           for (const { keyName, keyValue } of comp.keys) {
             // Find key SID (use nodeInfo instead of pathToSid)
             const keyPath = `${strippedPath}/${keyName}`;
-            const keyNodeInfoForSid = sidInfo.nodeInfo?.get(keyPath);
+            const keyNodeInfoForSid = sidInfo.pathToInfo?.get(keyPath);
             const keySid = keyNodeInfoForSid?.sid;
 
             if (keySid == null) continue;

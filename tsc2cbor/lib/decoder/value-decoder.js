@@ -323,8 +323,8 @@ export function decodeObjectValues(sidObject, typeTable, sidInfo) {
   for (const [sidKey, cborValue] of Object.entries(sidObject)) {
     const sid = Number(sidKey);
 
-    // Step 1: SID → YANG path (use nodeInfoBySid instead of sidToPath)
-    const yangPath = sidInfo.nodeInfoBySid?.get(sid)?.path;
+    // Step 1: SID → YANG path (use sidToInfo instead of sidToPath)
+    const yangPath = sidInfo.sidToInfo?.get(sid)?.path;
     if (!yangPath) {
       console.warn(`No YANG path found for SID ${sid}`);
       decoded[sid] = cborValue; // Keep as SID

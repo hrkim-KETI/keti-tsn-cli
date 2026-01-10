@@ -41,8 +41,8 @@ Shared utilities used by both encoder and decoder.
 - `augmentSidInfoWithAliases(sidInfo, choiceNames, caseNames)` - Add choice/case aliases
 
 **Data Structures**:
-- **Temporary**: `pathEntries` (path → {sid, prefixedPath}) - deleted after nodeInfo built
-- **Final Maps**: `prefixedPathToSid`, `identityToSid` ↔ `sidToIdentity`, `nodeInfo`, `nodeInfoBySid`, `leafToPaths`
+- **Temporary**: `pathEntries` (path → {sid, prefixedPath}) - deleted after pathToInfo built
+- **Final Maps**: `prefixedPathToSid`, `identityToSid` ↔ `sidToIdentity`, `pathToInfo`, `sidToInfo`, `leafToPaths`
 - **Node Info**: Parent relationships, Delta-SID, depth tracking
 
 **Dependencies**: Built-in modules only
