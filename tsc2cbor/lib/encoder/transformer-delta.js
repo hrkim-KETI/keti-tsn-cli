@@ -92,7 +92,7 @@ export function transformTree(
       );
 
       // Determine key encoding
-      const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
+      const nodeInfo = sidInfo.pathToInfo?.get(yangPathNoPrefix) || sidInfo.pathToInfo?.get(yangPath);
       let encodedKey;
       const isDeltaSid = (nodeInfo?.parent !== null && nodeInfo?.parent === parentSid);
 
@@ -151,7 +151,7 @@ export function transformTree(
       });
 
       // Determine key encoding for the array
-      const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
+      const nodeInfo = sidInfo.pathToInfo?.get(yangPathNoPrefix) || sidInfo.pathToInfo?.get(yangPath);
       let encodedKey;
       const isDeltaSid = (nodeInfo?.parent !== null && nodeInfo?.parent === parentSid);
 
@@ -193,7 +193,7 @@ export function transformTree(
     }
 
     // Get node info to check parent relationship
-    const nodeInfo = sidInfo.nodeInfo?.get(yangPathNoPrefix) || sidInfo.nodeInfo?.get(yangPath);
+    const nodeInfo = sidInfo.pathToInfo?.get(yangPathNoPrefix) || sidInfo.pathToInfo?.get(yangPath);
 
     let encodedKey;
     if (nodeInfo && nodeInfo.parent !== null && nodeInfo.parent === parentSid) {

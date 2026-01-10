@@ -15,8 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-// v7: Refactored to use pathEntries as single temporary Map
-const CACHE_VERSION = 7;
+// v8: Renamed nodeInfo → pathToInfo, nodeInfoBySid → sidToInfo
+const CACHE_VERSION = 8;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -62,8 +62,8 @@ function serializeData(sidInfo, typeTable, schemaInfo) {
       prefixedPathToSid: [...sidInfo.prefixedPathToSid],
       identityToSid: [...sidInfo.identityToSid],
       sidToIdentity: [...sidInfo.sidToIdentity],
-      nodeInfo: [...sidInfo.nodeInfo],
-      nodeInfoBySid: [...sidInfo.nodeInfoBySid],
+      pathToInfo: [...sidInfo.pathToInfo],
+      sidToInfo: [...sidInfo.sidToInfo],
       leafToPaths: [...sidInfo.leafToPaths]
     },
     typeTable: {
@@ -104,8 +104,8 @@ function deserializeData(data) {
     prefixedPathToSid: new Map(data.sidInfo.prefixedPathToSid),
     identityToSid: new Map(data.sidInfo.identityToSid),
     sidToIdentity: new Map(data.sidInfo.sidToIdentity),
-    nodeInfo: new Map(data.sidInfo.nodeInfo),
-    nodeInfoBySid: new Map(data.sidInfo.nodeInfoBySid),
+    pathToInfo: new Map(data.sidInfo.pathToInfo),
+    sidToInfo: new Map(data.sidInfo.sidToInfo),
     leafToPaths: new Map(data.sidInfo.leafToPaths)
   };
 
@@ -144,7 +144,7 @@ async function loadFromCache(cacheFile, verbose) {
   const result = deserializeData(data);
 
   if (verbose) {
-    const sidCount = result.sidInfo.nodeInfo.size;
+    const sidCount = result.sidInfo.pathToInfo.size;
     const typeCount = result.typeTable.types.size;
     console.log(`  Loaded from cache: ${sidCount} SIDs, ${typeCount} types`);
   }
@@ -209,15 +209,15 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
   // Step 2: Initialize merged SID info structure
   const sidInfo = {
-    // Temporary: for merging and parent calculation (deleted after nodeInfo built)
+    // Temporary: for merging and parent calculation (deleted after pathToInfo built)
     pathEntries: new Map(),
 
     // Final Maps (kept)
     prefixedPathToSid: new Map(),
     identityToSid: new Map(),
     sidToIdentity: new Map(),
-    nodeInfo: new Map(),
-    nodeInfoBySid: new Map(),
+    pathToInfo: new Map(),
+    sidToInfo: new Map(),
     leafToPaths: new Map()
   };
 
@@ -248,7 +248,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
   }
 
-  // Step 3: Build nodeInfo with parent relationships
+  // Step 3: Build pathToInfo with parent relationships
   // This is done after merging because parent might be from a different module
   for (const [nodePath, entry] of sidInfo.pathEntries) {
     if (nodePath.startsWith('identity:') || nodePath.startsWith('feature:')) {
@@ -268,7 +268,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     }
 
     const prefixedPath = entry.prefixedPath || nodePath;
-    sidInfo.nodeInfo.set(nodePath, {
+    sidInfo.pathToInfo.set(nodePath, {
       sid: entry.sid,
       parent,
       deltaSid: parent !== null ? entry.sid - parent : entry.sid,
@@ -276,15 +276,15 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     });
   }
 
-  // Step 3.5: Build nodeInfoBySid for reverse lookup (SID → node info)
-  for (const [nodePath, nodeInfo] of sidInfo.nodeInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || nodePath;
+  // Step 3.5: Build sidToInfo for reverse lookup (SID → node info)
+  for (const [nodePath, pathToInfo] of sidInfo.pathToInfo) {
+    const prefixedPath = pathToInfo.prefixedPath || nodePath;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
 
-    sidInfo.nodeInfoBySid.set(nodeInfo.sid, {
-      parent: nodeInfo.parent,
-      deltaSid: nodeInfo.deltaSid,
+    sidInfo.sidToInfo.set(pathToInfo.sid, {
+      parent: pathToInfo.parent,
+      deltaSid: pathToInfo.deltaSid,
       path: nodePath,
       prefixedPath,
       localName: localPrefixed,
@@ -374,7 +374,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   }
 
   if (verbose) {
-    const sidCount = sidInfo.nodeInfo.size;
+    const sidCount = sidInfo.pathToInfo.size;
     const typeCount = typeTable.types.size;
 
     let enumCount = 0;
