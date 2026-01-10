@@ -22,22 +22,18 @@ export async function buildSidInfo(sidFilePath) {
     const sidFile = sidData['ietf-sid-file:sid-file'] || sidData; // Object
 
     const info = {
-      // BiMap: Path ↔ SID (양방향)
-      pathToSid: new Map(),     // YANG path → SID (encoding)
-      sidToPath: new Map(),     // SID → YANG path (decoding)
-      prefixedPathToSid: new Map(), // Prefixed YANG path → SID
-      sidToPrefixedPath: new Map(), // SID → Prefixed YANG path
-      pathToPrefixed: new Map(),    // Stripped path → Prefixed path
+      // Temporary: path → {sid, prefixedPath} for merging and parent calculation
+      // Will be deleted after nodeInfo/nodeInfoBySid are built
+      pathEntries: new Map(),
 
-      // BiMap: Identity ↔ SID (양방향)
-      identityToSid: new Map(), // identity name → SID (encoding)
-      sidToIdentity: new Map(), // SID → identity name (decoding)
+      // Final Maps (kept after processing)
+      prefixedPathToSid: new Map(), // Prefixed YANG path → SID (encoding)
+      identityToSid: new Map(),     // identity name → SID (encoding)
+      sidToIdentity: new Map(),     // SID → identity name (decoding)
+      leafToPaths: new Map()        // leaf node name → [fullPath1, ...] (fuzzy matching)
 
-      // Parent-child relationship for Delta-SID (RFC 9254)
-      nodeInfo: new Map(),      // path → {sid, parent, deltaSid, prefixedPath}
-
-      // Index for fuzzy path matching (choice/case)
-      leafToPaths: new Map()   // leaf node name → [fullPath1, fullPath2, ...]
+      // nodeInfo and nodeInfoBySid are built later after merging all modules
+      // (parent calculation requires all modules to be merged first)
     };
 
     // Parse items array (RFC 9254 format)
@@ -51,7 +47,7 @@ export async function buildSidInfo(sidFilePath) {
     // NOTE: nodeInfo (parent-child relationships) are NOT calculated here
     // because augmentation parents may be in different .sid files.
     // Parent calculation must be done AFTER merging all modules.
-    // See: mergeSidInfos() or caller's Recalculate step.
+    // See: loadYangInputs() in input-loader.js
 
     return info;
 
@@ -135,14 +131,12 @@ function processSidItem(item, info) {
     }
   }
 
-  // Store in both directions for fast lookup
-  info.pathToSid.set(yangPath, sid);
-  info.sidToPath.set(sid, yangPath);
+  // Store path → {sid, prefixedPath} for later nodeInfo building
+  info.pathEntries.set(yangPath, { sid, prefixedPath });
 
+  // Store prefixedPath → SID for encoding (final, kept)
   if (prefixedPath) {
     info.prefixedPathToSid.set(prefixedPath, sid);
-    info.sidToPrefixedPath.set(sid, prefixedPath);
-    info.pathToPrefixed.set(yangPath, prefixedPath);
   }
 }
 
@@ -280,14 +274,19 @@ export function jsonPathToYangPath(jsonPath) {
 
 /**
  * Get all SID paths for debugging
- * @param {object} sidInfo - SID info
+ * @param {object} sidInfo - SID info (with nodeInfo or pathEntries)
  * @returns {Array} Array of {path, sid} objects, sorted by SID
  */
 export function getAllSidPaths(sidInfo) {
   const paths = [];
 
-  for (const [path, sid] of sidInfo.pathToSid) {
-    paths.push({ path, sid });
+  // Use nodeInfo (final) or pathEntries (during building)
+  const source = sidInfo.nodeInfo || sidInfo.pathEntries;
+  if (source) {
+    for (const [path, info] of source) {
+      const sid = info.sid !== undefined ? info.sid : info;
+      paths.push({ path, sid });
+    }
   }
 
   // Sort by SID for better readability
@@ -302,13 +301,16 @@ export function getAllSidPaths(sidInfo) {
  * @returns {object} Statistics
  */
 export function getSidInfoStats(sidInfo) {
+  const nodeInfo = sidInfo.nodeInfo;
+  const sids = nodeInfo ? [...nodeInfo.values()].map(n => n.sid) : [];
+
   return {
-    totalPaths: sidInfo.pathToSid.size,
-    totalIdentities: sidInfo.identityToSid.size,
-    sidRange: {
-      min: Math.min(...sidInfo.sidToPath.keys()),
-      max: Math.max(...sidInfo.sidToPath.keys())
-    }
+    totalPaths: nodeInfo ? nodeInfo.size : 0,
+    totalIdentities: sidInfo.identityToSid ? sidInfo.identityToSid.size : 0,
+    sidRange: sids.length > 0 ? {
+      min: Math.min(...sids),
+      max: Math.max(...sids)
+    } : { min: 0, max: 0 }
   };
 }
 
@@ -319,21 +321,15 @@ export function getSidInfoStats(sidInfo) {
  */
 export async function loadMultipleSidFiles(sidFilePaths) {
   const merged = {
-    // BiMap: Path ↔ SID
-    pathToSid: new Map(),
-    sidToPath: new Map(),
-    prefixedPathToSid: new Map(),
-    sidToPrefixedPath: new Map(),
-    pathToPrefixed: new Map(),
+    // Temporary: for merging and parent calculation
+    pathEntries: new Map(),
 
-    // BiMap: Identity ↔ SID
+    // Final Maps
+    prefixedPathToSid: new Map(),
     identityToSid: new Map(),
     sidToIdentity: new Map(),
-
-    // Parent-child relationship for Delta-SID
     nodeInfo: new Map(),
-
-    // Index for fuzzy path matching
+    nodeInfoBySid: new Map(),
     leafToPaths: new Map()
   };
 
@@ -341,21 +337,12 @@ export async function loadMultipleSidFiles(sidFilePaths) {
   const sidInfos = await Promise.all(sidFilePaths.map(filePath => buildSidInfo(filePath)));
 
   sidInfos.forEach(info => {
-    // Merge BiMap: Path ↔ SID
-    for (const [path, sid] of info.pathToSid) {
-      merged.pathToSid.set(path, sid);
-    }
-    for (const [sid, path] of info.sidToPath) {
-      merged.sidToPath.set(sid, path);
+    // Merge pathEntries
+    for (const [path, entry] of info.pathEntries) {
+      merged.pathEntries.set(path, entry);
     }
     for (const [prefixedPath, sid] of info.prefixedPathToSid) {
       merged.prefixedPathToSid.set(prefixedPath, sid);
-    }
-    for (const [sid, prefixedPath] of info.sidToPrefixedPath) {
-      merged.sidToPrefixedPath.set(sid, prefixedPath);
-    }
-    for (const [strippedPath, prefixedPath] of info.pathToPrefixed) {
-      merged.pathToPrefixed.set(strippedPath, prefixedPath);
     }
 
     // Merge BiMap: Identity ↔ SID
@@ -366,11 +353,6 @@ export async function loadMultipleSidFiles(sidFilePaths) {
       merged.sidToIdentity.set(sid, name);
     }
 
-    // Merge nodeInfo
-    for (const [path, nodeData] of info.nodeInfo) {
-      merged.nodeInfo.set(path, nodeData);
-    }
-
     // Merge leafToPaths index
     for (const [leaf, paths] of info.leafToPaths) {
       const existing = merged.leafToPaths.get(leaf) || [];
@@ -378,9 +360,9 @@ export async function loadMultipleSidFiles(sidFilePaths) {
     }
   });
 
-  // Recalculate parent relationships for merged info
-  // This is necessary because parent might be from a different module
-  for (const [path, sid] of merged.pathToSid) {
+  // Build nodeInfo with parent relationships
+  // This is done after merging because parent might be from a different module
+  for (const [path, entry] of merged.pathEntries) {
     if (path.startsWith('identity:') || path.startsWith('feature:')) {
       continue;
     }
@@ -390,19 +372,40 @@ export async function loadMultipleSidFiles(sidFilePaths) {
 
     for (let i = parts.length - 1; i > 0; i--) {
       const ancestorPath = parts.slice(0, i).join('/');
-      if (merged.pathToSid.has(ancestorPath)) {
-        parent = merged.pathToSid.get(ancestorPath);
+      const ancestorEntry = merged.pathEntries.get(ancestorPath);
+      if (ancestorEntry) {
+        parent = ancestorEntry.sid;
         break;
       }
     }
 
+    const prefixedPath = entry.prefixedPath || path;
     merged.nodeInfo.set(path, {
-      sid,
+      sid: entry.sid,
       parent,
-      deltaSid: parent !== null ? sid - parent : sid,
-      prefixedPath: merged.pathToPrefixed.get(path) || merged.sidToPrefixedPath.get(sid) || path
+      deltaSid: parent !== null ? entry.sid - parent : entry.sid,
+      prefixedPath
     });
   }
+
+  // Build nodeInfoBySid for reverse lookup
+  for (const [path, nodeInfo] of merged.nodeInfo) {
+    const prefixedPath = nodeInfo.prefixedPath || path;
+    const prefixedSegments = prefixedPath.split('/').filter(Boolean);
+    const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
+
+    merged.nodeInfoBySid.set(nodeInfo.sid, {
+      parent: nodeInfo.parent,
+      deltaSid: nodeInfo.deltaSid,
+      path,
+      prefixedPath,
+      localName: localPrefixed,
+      strippedLocalName: path.split('/').pop()
+    });
+  }
+
+  // Clean up temporary Map
+  delete merged.pathEntries;
 
   return merged;
 }

@@ -15,8 +15,8 @@ import fs from 'fs';
 import path from 'path';
 
 // Cache version - increment when cache format changes
-// v6: Removed pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed (use nodeInfo/nodeInfoBySid)
-const CACHE_VERSION = 6;
+// v7: Refactored to use pathEntries as single temporary Map
+const CACHE_VERSION = 7;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -58,15 +58,13 @@ function serializeData(sidInfo, typeTable, schemaInfo) {
     version: CACHE_VERSION,
     timestamp: Date.now(),
     sidInfo: {
-      // Core maps (kept)
+      // Final maps only (no temporary maps like pathEntries)
       prefixedPathToSid: [...sidInfo.prefixedPathToSid],
       identityToSid: [...sidInfo.identityToSid],
       sidToIdentity: [...sidInfo.sidToIdentity],
       nodeInfo: [...sidInfo.nodeInfo],
       nodeInfoBySid: [...sidInfo.nodeInfoBySid],
       leafToPaths: [...sidInfo.leafToPaths]
-      // Removed: pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed
-      // (use nodeInfo/nodeInfoBySid instead)
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
@@ -102,14 +100,13 @@ function deserializeData(data) {
   }
 
   const sidInfo = {
-    // Core maps (kept)
+    // Final maps only
     prefixedPathToSid: new Map(data.sidInfo.prefixedPathToSid),
     identityToSid: new Map(data.sidInfo.identityToSid),
     sidToIdentity: new Map(data.sidInfo.sidToIdentity),
     nodeInfo: new Map(data.sidInfo.nodeInfo),
     nodeInfoBySid: new Map(data.sidInfo.nodeInfoBySid),
     leafToPaths: new Map(data.sidInfo.leafToPaths)
-    // Removed: pathToSid, sidToPath, sidToPrefixedPath, pathToPrefixed
   };
 
   const typeTable = {
@@ -147,7 +144,7 @@ async function loadFromCache(cacheFile, verbose) {
   const result = deserializeData(data);
 
   if (verbose) {
-    const sidCount = result.sidInfo.pathToSid.size;
+    const sidCount = result.sidInfo.nodeInfo.size;
     const typeCount = result.typeTable.types.size;
     console.log(`  Loaded from cache: ${sidCount} SIDs, ${typeCount} types`);
   }
@@ -212,14 +209,15 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
   // Step 2: Initialize merged SID info structure
   const sidInfo = {
-    pathToSid: new Map(),
-    sidToPath: new Map(),
+    // Temporary: for merging and parent calculation (deleted after nodeInfo built)
+    pathEntries: new Map(),
+
+    // Final Maps (kept)
     prefixedPathToSid: new Map(),
-    sidToPrefixedPath: new Map(),
-    pathToPrefixed: new Map(),
     identityToSid: new Map(),
     sidToIdentity: new Map(),
     nodeInfo: new Map(),
+    nodeInfoBySid: new Map(),
     leafToPaths: new Map()
   };
 
@@ -228,37 +226,31 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
   // Merge all SID infos
   for (const info of sidInfos) {
-    for (const [path, sid] of info.pathToSid) {
-      sidInfo.pathToSid.set(path, sid);
+    // Merge pathEntries (temporary)
+    for (const [nodePath, entry] of info.pathEntries) {
+      sidInfo.pathEntries.set(nodePath, entry);
     }
-    for (const [sid, path] of info.sidToPath) {
-      sidInfo.sidToPath.set(sid, path);
-    }
+    // Merge prefixedPathToSid (final)
     for (const [prefixedPath, sid] of info.prefixedPathToSid) {
       sidInfo.prefixedPathToSid.set(prefixedPath, sid);
     }
-    for (const [sid, prefixedPath] of info.sidToPrefixedPath) {
-      sidInfo.sidToPrefixedPath.set(sid, prefixedPath);
-    }
-    for (const [strippedPath, prefixedPath] of info.pathToPrefixed) {
-      sidInfo.pathToPrefixed.set(strippedPath, prefixedPath);
-    }
+    // Merge identity maps (final)
     for (const [identity, sid] of info.identityToSid) {
       sidInfo.identityToSid.set(identity, sid);
     }
     for (const [sid, identity] of info.sidToIdentity) {
       sidInfo.sidToIdentity.set(sid, identity);
     }
-    // Merge leafToPaths index for fuzzy matching
+    // Merge leafToPaths index for fuzzy matching (final)
     for (const [leaf, paths] of info.leafToPaths) {
       const existing = sidInfo.leafToPaths.get(leaf) || [];
       sidInfo.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]);
     }
   }
 
-  // Step 3: Recalculate parent relationships for merged info
-  // This is necessary because parent might be from a different module
-  for (const [nodePath, sid] of sidInfo.pathToSid) {
+  // Step 3: Build nodeInfo with parent relationships
+  // This is done after merging because parent might be from a different module
+  for (const [nodePath, entry] of sidInfo.pathEntries) {
     if (nodePath.startsWith('identity:') || nodePath.startsWith('feature:')) {
       continue;
     }
@@ -268,47 +260,40 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
 
     for (let i = parts.length - 1; i > 0; i--) {
       const ancestorPath = parts.slice(0, i).join('/');
-      if (sidInfo.pathToSid.has(ancestorPath)) {
-        parent = sidInfo.pathToSid.get(ancestorPath);
+      const ancestorEntry = sidInfo.pathEntries.get(ancestorPath);
+      if (ancestorEntry) {
+        parent = ancestorEntry.sid;
         break;
       }
     }
 
+    const prefixedPath = entry.prefixedPath || nodePath;
     sidInfo.nodeInfo.set(nodePath, {
-      sid,
+      sid: entry.sid,
       parent,
-      deltaSid: parent !== null ? sid - parent : sid,
-      prefixedPath: sidInfo.pathToPrefixed.get(nodePath) || sidInfo.sidToPrefixedPath.get(sid) || nodePath
+      deltaSid: parent !== null ? entry.sid - parent : entry.sid,
+      prefixedPath
     });
   }
 
-  // Step 3.5: Build reverse-lookup map (SID → node info) for decoding
-  // This avoids rebuilding the map on every decode call
-  // Naming: nodeInfo (path → info) vs nodeInfoBySid (SID → info)
-  sidInfo.nodeInfoBySid = new Map();
-
-  for (const [path, nodeInfo] of sidInfo.nodeInfo) {
-    // nodeInfo.prefixedPath is already set in Step 3
-    const prefixedPath = nodeInfo.prefixedPath || path;
+  // Step 3.5: Build nodeInfoBySid for reverse lookup (SID → node info)
+  for (const [nodePath, nodeInfo] of sidInfo.nodeInfo) {
+    const prefixedPath = nodeInfo.prefixedPath || nodePath;
     const prefixedSegments = prefixedPath.split('/').filter(Boolean);
     const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-    // Note: sid is already the Map key, so we only include parent and deltaSid from nodeInfo
+
     sidInfo.nodeInfoBySid.set(nodeInfo.sid, {
       parent: nodeInfo.parent,
       deltaSid: nodeInfo.deltaSid,
-      path,
+      path: nodePath,
       prefixedPath,
       localName: localPrefixed,
-      strippedLocalName: path.split('/').pop()
+      strippedLocalName: nodePath.split('/').pop()
     });
   }
 
-  // Step 3.6: Clean up intermediate Maps (no longer needed after nodeInfo/nodeInfoBySid built)
-  // These maps were used during initialization but are redundant now
-  delete sidInfo.pathToSid;
-  delete sidInfo.sidToPath;
-  delete sidInfo.sidToPrefixedPath;
-  delete sidInfo.pathToPrefixed;
+  // Step 3.6: Clean up temporary Map
+  delete sidInfo.pathEntries;
 
   // Step 4: Load all YANG files from cache directory
   const yangFiles = allFiles
@@ -389,7 +374,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   }
 
   if (verbose) {
-    const sidCount = sidInfo.pathToSid.size;
+    const sidCount = sidInfo.nodeInfo.size;
     const typeCount = typeTable.types.size;
 
     let enumCount = 0;
