@@ -244,7 +244,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     // Merge leafToPaths index for fuzzy matching (final)
     for (const [leaf, paths] of info.leafToPaths) {
       const existing = sidInfo.leafToPaths.get(leaf) || [];
-      sidInfo.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]);
+      sidInfo.leafToPaths.set(leaf, [...new Set([...existing, ...paths])]); // Delete duplicated data using Set
     }
   }
 
@@ -340,7 +340,7 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     const vendorPrefixes = ['velocitysp-', 'mchp-'];
     for (const prefix of vendorPrefixes) {
       if (name.startsWith(prefix)) {
-        const baseName = name.substring(prefix.length);
+        const baseName = name.substring(prefix.length); // Get a name without prefix
         const baseTypedef = typeTable.typedefs.get(baseName);
 
         if (baseTypedef && baseTypedef.enum && typedef.enum) {

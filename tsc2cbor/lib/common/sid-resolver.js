@@ -63,8 +63,8 @@ export async function buildSidInfo(sidFilePath) {
  */
 function processSidItem(item, info) {
   const sid = item.sid;
-  const namespace = item.namespace || 'data';
-  const identifier = item.identifier || '';
+  const namespace = item.namespace || 'data'; // category 
+  const identifier = item.identifier || ''; // name or path
 
   // Build YANG path based on namespace
   let yangPath;

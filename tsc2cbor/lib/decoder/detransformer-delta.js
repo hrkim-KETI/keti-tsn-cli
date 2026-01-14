@@ -8,35 +8,6 @@
 import { decodeValue } from './value-decoder.js';
 
 /**
- * Build reverse-lookup map from SID to node info
- * @param {object} sidInfo - SID tree with nodeInfo
- * @returns {Map} Map of SID → node info
- */
-function buildSidInfoMap(sidInfo) {
-  const sidToInfo = new Map();
-
-  // Use nodeInfo which has parent relationships
-  for (const [path, nodeInfo] of sidInfo.pathToInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || path;
-    const prefixedSegments = prefixedPath.split('/').filter(Boolean);
-    const localPrefixed = prefixedSegments.length ? prefixedSegments[prefixedSegments.length - 1] : prefixedPath;
-    // Note: sid is already the Map key, only include parent and deltaSid from nodeInfo
-    sidToInfo.set(nodeInfo.sid, {
-      parent: nodeInfo.parent,
-      deltaSid: nodeInfo.deltaSid,
-      path,
-      prefixedPath,
-      localName: localPrefixed,
-      strippedLocalName: path.split('/').pop()
-    });
-  }
-
-  // Note: sidToPath fallback removed - sidToInfo should be pre-built by loadInputs()
-
-  return sidToInfo;
-}
-
-/**
  * Decode CBOR Map to nested object, resolving Delta-SIDs
  * @param {*} cborData - CBOR data (Map/Array/primitive)
  * @param {Map} sidToInfo - Reverse-lookup map SID → node info
@@ -149,8 +120,7 @@ function cborToJsonDelta(cborData, sidToInfo, typeTable, sidInfo, parentSid = nu
  * @returns {object} Flat object with YANG paths as keys
  */
 export function detransformFromDeltaSid(cborData, typeTable, sidInfo) {
-  // Use cached sidToInfo if available, otherwise build it
-  const sidToInfo = sidInfo.sidToInfo || buildSidInfoMap(sidInfo);
+  const sidToInfo = sidInfo.sidToInfo;
 
   // Convert to Map if needed
   const cborMap = cborData instanceof Map ? cborData : new Map(Object.entries(cborData));
@@ -170,8 +140,7 @@ export function detransformFromDeltaSid(cborData, typeTable, sidInfo) {
  * @returns {object} Nested object
  */
 export function detransform(cborData, typeTable, sidInfo) {
-  // Use cached sidToInfo if available, otherwise build it
-  const sidToInfo = sidInfo.sidToInfo || buildSidInfoMap(sidInfo);
+  const sidToInfo = sidInfo.sidToInfo;
 
   // Convert to Map if needed, preserving numeric keys
   let cborMap;
