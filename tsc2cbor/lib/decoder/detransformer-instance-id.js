@@ -33,30 +33,6 @@ const LIST_KEYS = {
 };
 
 /**
- * Build reverse-lookup map from SID to node info
- */
-function buildSidInfoMap(sidInfo) {
-  const sidToInfo = new Map();
-
-  for (const [path, nodeInfo] of sidInfo.pathToInfo) {
-    const prefixedPath = nodeInfo.prefixedPath || path;
-
-    // Note: sid is already the Map key, only include parent and deltaSid from nodeInfo
-    sidToInfo.set(nodeInfo.sid, {
-      parent: nodeInfo.parent,
-      deltaSid: nodeInfo.deltaSid,
-      path,
-      prefixedPath,
-      localName: path.split('/').pop()
-    });
-  }
-
-  // Note: sidToPath fallback removed - sidToInfo should be pre-built by loadInputs()
-
-  return sidToInfo;
-}
-
-/**
  * Build XPath from prefixed YANG path with list key predicates
  */
 function buildXPath(prefixedPath, listKeys) {
@@ -224,8 +200,7 @@ function extractInstanceIds(cborData, sidToInfo, typeTable, sidInfo, parentSid, 
  * @returns {Array<Object>} Array of instance-identifier entries
  */
 export function detransformToInstanceId(cborData, typeTable, sidInfo) {
-  // Use cached sidToInfo if available, otherwise build it
-  const sidToInfo = sidInfo.sidToInfo || buildSidInfoMap(sidInfo);
+  const sidToInfo = sidInfo.sidToInfo;
   const results = [];
   const listKeys = new Map();
 
