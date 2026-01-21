@@ -20,6 +20,37 @@ Microchip TSN 스위치 설정을 위한 CLI 도구
 | `patch` | 설정값 변경 (iPATCH) |
 | `get` | 전체 설정 조회 (Block-wise GET) |
 
+## 지원 Transport
+
+| Transport | 연결 방식 | 프로토콜 | 용도 |
+|-----------|-----------|----------|------|
+| Serial (기본) | USB/UART 직접 연결 | MUP1 | 개발/디버깅 |
+| WiFi | ESP32 AP를 통한 무선 연결 | UDP/MUP1 | 원격 디버깅/현장 배포 |
+
+### 아키텍처
+
+**Serial 모드 (기본):**
+```
+Host (PC) --[USB/UART/MUP1]--> Target (LAN9662)
+```
+
+**WiFi 모드 (ESP32 AP + Transparent Bridge):**
+```
+┌─────────────┐      WiFi (UDP)      ┌─────────────┐      Serial      ┌─────────────┐
+│  Host (PC)  │ ◀─────────────────▶  │   ESP32     │ ◀─────────────▶  │  LAN9662    │
+│  (Station)  │     MUP1 frames      │   (AP)      │     MUP1         │  (Target)   │
+└─────────────┘      Port 5683       └─────────────┘                  └─────────────┘
+       │                                    │
+       └──── WiFi Direct 연결 ──────────────┘
+            (독립 디버깅 네트워크)
+```
+
+**WiFi 모드 장점:**
+- **독립 네트워크**: 기존 인프라 의존성 없음 (ESP32가 AP 역할)
+- **UDP 기반**: CoAP 기본 프로토콜 (RFC 7252), 낮은 오버헤드
+- **투명 브리지**: MUP1 프레임을 그대로 전달, 최소 지연시간
+- **격리된 환경**: 디버깅 트래픽이 외부 망에 노출 안됨
+
 ## 설치
 
 ```bash
@@ -91,6 +122,8 @@ ietf-interfaces:interfaces:
 
 ### 장비 명령 (디바이스 필요)
 
+**Serial 모드 (기본):**
+
 ```bash
 # YANG 체크섬 조회 (기본 장치: /dev/ttyACM0)
 ./keti-tsn checksum
@@ -111,11 +144,43 @@ ietf-interfaces:interfaces:
 ./keti-tsn patch config.patch.yaml
 ```
 
+**WiFi 모드 (ESP32 AP 연결):**
+
+```bash
+# 1. PC를 ESP32 AP에 연결 (SSID: "TSN-Debug" 등)
+# 2. ESP32 기본 AP IP: 192.168.4.1
+
+# YANG 체크섬 조회
+./keti-tsn checksum --transport wifi --host 192.168.4.1
+
+# 전체 설정 조회
+./keti-tsn get -o backup.yaml --transport wifi --host 192.168.4.1
+
+# 설정값 조회
+./keti-tsn fetch query.yaml -o result.yaml --transport wifi --host 192.168.4.1
+
+# 설정값 변경
+./keti-tsn patch config.patch.yaml --transport wifi --host 192.168.4.1
+
+# 커스텀 포트 사용 시
+./keti-tsn checksum --transport wifi --host 192.168.4.1 --port 5684
+```
+
 ### 옵션
+
+**Transport 옵션:**
 
 | 옵션 | 설명 |
 |------|------|
-| `-d, --device <path>` | 장치 경로 (기본값: `/dev/ttyACM0`) |
+| `--transport <type>` | Transport 타입: `serial` \| `wifi` (기본값: `serial`) |
+| `-d, --device <path>` | Serial 장치 경로 (기본값: `/dev/ttyACM0`) |
+| `--host <address>` | WiFi 프록시 IP 주소 (WiFi 모드 필수) |
+| `--port <number>` | WiFi 프록시 포트 (기본값: `5683`) |
+
+**일반 옵션:**
+
+| 옵션 | 설명 |
+|------|------|
 | `-o, --output <file>` | 출력 파일 |
 | `-c, --cache <dir>` | YANG 캐시 디렉토리 |
 | `--sort-mode <mode>` | CBOR 키 정렬: `velocity` \| `rfc8949` (기본값: `velocity`) |
@@ -149,6 +214,13 @@ keti-tsn-cli/
 │   │   │   └── cbor-encoder.js    # CBOR 인코더
 │   │   ├── encoder/        # YAML → CBOR 변환
 │   │   ├── decoder/        # CBOR → YAML 변환
+│   │   ├── transport/      # 🆕 Transport 추상화 레이어
+│   │   │   ├── index.js           # Transport Factory
+│   │   │   ├── base.js            # Transport 기본 인터페이스
+│   │   │   ├── serial-transport.js # Serial 구현
+│   │   │   └── wifi-transport.js   # WiFi 구현
+│   │   ├── wifi/           # 🆕 WiFi 프로토콜
+│   │   │   └── packet.js          # WiFi 패킷 프로토콜
 │   │   ├── serial/         # 시리얼 통신 (MUP1 프로토콜)
 │   │   ├── coap/           # CoAP 프로토콜
 │   │   └── yang-catalog/   # YANG 카탈로그 관리
@@ -175,6 +247,19 @@ keti-tsn-cli/
 ```
 
 ## 변경 이력
+
+### 2026-01-20
+- WiFi Transport 기능 추가
+  - ESP32 AP 모드 + UDP 투명 브리지 방식
+  - CoAP 기본 프로토콜 (UDP, RFC 7252) 사용
+  - Transport 추상화 레이어 구현 (`transport/base.js`, `serial-transport.js`, `wifi-transport.js`)
+  - 새 CLI 옵션: `--transport`, `--host`, `--port`
+- WiFi 아키텍처
+  - Host(PC)가 Station, ESP32가 AP 역할
+  - 독립적인 무선 디버깅 망 구축 가능
+  - MUP1 프레임을 UDP로 투명하게 전달
+- 모든 장비 명령에서 WiFi/Serial 선택 가능
+  - `checksum`, `download`, `get`, `fetch`, `patch`
 
 ### 2024-12-29
 - `fetch` 명령 구현 (iFETCH with instance-identifier format)

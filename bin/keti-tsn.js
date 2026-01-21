@@ -28,8 +28,10 @@ const packageJson = JSON.parse(
   fs.readFileSync(join(__dirname, '../package.json'), 'utf-8')
 );
 
-// Default device path
+// Default values
 const DEFAULT_DEVICE = '/dev/ttyACM0';
+const DEFAULT_TRANSPORT = 'serial';
+const DEFAULT_WIFI_PORT = 5683;
 
 /**
  * Show help message
@@ -53,8 +55,13 @@ Commands:
   fetch <file>          Fetch configuration values from device
   patch <file>          Apply configuration patch to device
 
-Options:
-  -d, --device <path>   Device path (default: ${DEFAULT_DEVICE})
+Transport Options:
+  --transport <type>    Transport type: serial | wifi (default: ${DEFAULT_TRANSPORT})
+  -d, --device <path>   Serial device path (default: ${DEFAULT_DEVICE})
+  --host <address>      WiFi proxy IP address (required for wifi transport)
+  --port <number>       WiFi proxy port (default: ${DEFAULT_WIFI_PORT})
+
+General Options:
   -o, --output <file>   Output file
   -c, --cache <dir>     YANG cache directory
   --sort-mode <mode>    CBOR key sort mode: velocity | rfc8949 (default: velocity)
@@ -63,13 +70,20 @@ Options:
   -h, --help            Show help
 
 Examples:
-  keti-tsn checksum                      # Query checksum (default device)
-  keti-tsn checksum -d /dev/ttyUSB0      # Query checksum (specific device)
-  keti-tsn download                      # Download YANG catalog
-  keti-tsn list                          # List cached catalogs
+  # Serial transport (default)
+  keti-tsn checksum                              # Query checksum
+  keti-tsn checksum -d /dev/ttyUSB0              # Specific device
+  keti-tsn patch config.yaml                     # Apply patch
+
+  # WiFi transport (via ESP32 proxy)
+  keti-tsn checksum --transport wifi --host 192.168.1.100
+  keti-tsn patch config.yaml --transport wifi --host 192.168.1.100
+  keti-tsn get -o backup.yaml --transport wifi --host 192.168.1.100 --port 5683
+
+  # Offline commands
+  keti-tsn list                                  # List cached catalogs
   keti-tsn encode config.yaml -o out.cbor
   keti-tsn decode response.cbor -o out.yaml
-  keti-tsn get -o backup.yaml
 `);
 }
 
@@ -80,7 +94,10 @@ function parseArgs(args) {
   const options = {
     command: null,
     file: null,
+    transport: DEFAULT_TRANSPORT,
     device: DEFAULT_DEVICE,
+    host: null,
+    port: DEFAULT_WIFI_PORT,
     output: null,
     cache: null,
     sortMode: 'velocity',
@@ -97,8 +114,14 @@ function parseArgs(args) {
     } else if (arg === '-V' || arg === '--version') {
       console.log(packageJson.version);
       process.exit(0);
+    } else if (arg === '--transport') {
+      options.transport = args[++i];
     } else if (arg === '-d' || arg === '--device') {
       options.device = args[++i];
+    } else if (arg === '--host') {
+      options.host = args[++i];
+    } else if (arg === '--port') {
+      options.port = parseInt(args[++i], 10);
     } else if (arg === '-o' || arg === '--output') {
       options.output = args[++i];
     } else if (arg === '-c' || arg === '--cache') {
@@ -116,6 +139,18 @@ function parseArgs(args) {
       }
     }
     i++;
+  }
+
+  // Validate transport options
+  if (options.transport === 'wifi' && !options.host) {
+    console.error('Error: --host is required when using WiFi transport');
+    process.exit(1);
+  }
+
+  if (options.transport !== 'serial' && options.transport !== 'wifi') {
+    console.error(`Error: Unknown transport type: ${options.transport}`);
+    console.log('Available transports: serial, wifi');
+    process.exit(1);
   }
 
   return options;
