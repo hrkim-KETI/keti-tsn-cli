@@ -39,3 +39,7 @@ coverage/
 # Internal docs
 docs/
 INTERNAL.md
+
+# Scripts and tests
+scripts/
+test/
