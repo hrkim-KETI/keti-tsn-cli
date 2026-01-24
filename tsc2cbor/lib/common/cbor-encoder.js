@@ -5,7 +5,7 @@
  * Optimized for RFC 9254 Delta-SID encoding
  */
 
-import { encode as encodeWithCborX, decode as decodeWithCborX, Tag } from 'cbor-x';
+import { encode as encodeWithCborX, decode as decodeWithCborX, decodeMultiple, Tag } from 'cbor-x';
 import cbor from 'cbor';
 
 // Export Tag for creating CBOR tags in value-encoder.js
@@ -20,6 +20,11 @@ export { Tag };
 function markIndefinite(data) {
   // Skip primitives
   if (data === null || data === undefined || typeof data !== 'object') {
+    return data;
+  }
+
+  // Skip CBOR Tagged values - they should be encoded as-is
+  if (data instanceof cbor.Tagged) {
     return data;
   }
 
@@ -119,6 +124,11 @@ function convertNumericKeys(data) {
 function encodeWithIndefinite(obj, sortMode = 'rfc8949') {
   // Primitives and nulls
   if (obj === null || obj === undefined || typeof obj !== 'object') {
+    return cbor.encode(obj);
+  }
+
+  // CBOR Tagged values (e.g., Tag 43 for bits, Tag 4 for decimal64)
+  if (obj instanceof cbor.Tagged) {
     return cbor.encode(obj);
   }
 
@@ -259,6 +269,24 @@ export function decodeFromCbor(cborBuffer, options = {}) {
     // Use cbor-x for decoding (supports both Tag 259 and regular maps)
     const data = decodeWithCborX(cborBuffer, options);
     return data;
+  } catch (error) {
+    throw new Error(`CBOR decoding error: ${error.message}`);
+  }
+}
+
+/**
+ * Decode multiple CBOR items from a buffer (CBOR sequence)
+ * @param {Buffer} cborBuffer - Buffer containing multiple CBOR items
+ * @param {object} options - Decoding options
+ * @returns {Array} Array of decoded CBOR items
+ */
+export function decodeAllFromCbor(cborBuffer, options = {}) {
+  try {
+    const results = [];
+    decodeMultiple(cborBuffer, (item) => {
+      results.push(item);
+    });
+    return results;
   } catch (error) {
     throw new Error(`CBOR decoding error: ${error.message}`);
   }

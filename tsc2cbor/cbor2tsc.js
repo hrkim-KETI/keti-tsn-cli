@@ -16,7 +16,7 @@ import yaml from 'js-yaml';
 import { loadYangInputs } from './lib/common/input-loader.js';
 import { detransform, getDetransformStats } from './lib/decoder/detransformer-delta.js';
 // Note: detransformer-instance-id.js is kept for potential future use
-import { decodeFromCbor } from './lib/common/cbor-encoder.js';
+import { decodeFromCbor, decodeAllFromCbor } from './lib/common/cbor-encoder.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -102,7 +102,36 @@ class Cbor2TscConverter {
     }
 
     // Step 1: Decode CBOR → Delta-SID Object
-    const decoded = decodeFromCbor(cborBuffer);
+    // Try decoding as CBOR sequence first (for iFETCH responses with multiple items)
+    let decoded;
+    try {
+      const items = decodeAllFromCbor(cborBuffer);
+      if (items.length === 1) {
+        decoded = items[0];
+      } else if (items.length > 1) {
+        // Merge multiple delta-SID maps into one
+        decoded = new Map();
+        for (const item of items) {
+          if (item instanceof Map) {
+            for (const [key, value] of item.entries()) {
+              decoded.set(key, value);
+            }
+          } else if (typeof item === 'object' && item !== null) {
+            for (const [key, value] of Object.entries(item)) {
+              decoded.set(Number(key), value);
+            }
+          }
+        }
+        if (verbose) {
+          console.log(`  Decoded ${items.length} CBOR items, merged into single map`);
+        }
+      } else {
+        throw new Error('No CBOR items found in buffer');
+      }
+    } catch (err) {
+      // Fallback to single-item decode
+      decoded = decodeFromCbor(cborBuffer);
+    }
 
     if (verbose) {
       const deltaSidKeys = decoded instanceof Map ? decoded.size : Object.keys(decoded).length;

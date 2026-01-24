@@ -75,10 +75,12 @@ function calculateChecksum(data) {
 /**
  * Escape special bytes for byte stuffing
  *
- * Special bytes: 0x3E (>), 0x3C (<), 0x5C (\)
- *
- * NOTE: 0x00 and 0xFF are NOT escaped. Based on VelocityDRIVE-SP CLI behavior,
- * these bytes should pass through unchanged. Only frame delimiters need escaping.
+ * Special bytes that need escaping:
+ * - 0x3E (>) → \>
+ * - 0x3C (<) → \<
+ * - 0x5C (\) → \\
+ * - 0x00    → \0
+ * - 0xFF    → \F
  *
  * @param {Buffer} data
  * @returns {Buffer}
@@ -89,10 +91,18 @@ function escapeData(data) {
   for (let i = 0; i < data.length; i++) {
     const byte = data[i];
 
-    // Only escape frame markers: >, <, \
     if (byte === SOF || byte === EOF || byte === ESC) {
+      // Frame markers: >, <, \ → \> \< \\
       escaped.push(ESC);
-      escaped.push(byte);    // >, <, \ → \> \< \\
+      escaped.push(byte);
+    } else if (byte === 0x00) {
+      // Null byte: 0x00 → \0
+      escaped.push(ESC);
+      escaped.push(ESC_00);
+    } else if (byte === 0xFF) {
+      // 0xFF → \F
+      escaped.push(ESC);
+      escaped.push(ESC_FF);
     } else {
       escaped.push(byte);
     }

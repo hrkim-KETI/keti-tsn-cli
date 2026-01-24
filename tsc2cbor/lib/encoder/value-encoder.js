@@ -10,8 +10,12 @@
  * - Tag 45: identityref in union context
  */
 
-import { Tag } from 'cbor-x';
+import cbor from 'cbor';
 import { resolveIdentityToSid } from '../common/sid-resolver.js';
+
+// Use cbor library's Tagged class for CBOR tag encoding
+// Note: cbor uses Tagged(tagNumber, value), not Tag(value, tagNumber)
+const { Tagged } = cbor;
 
 /**
  * Encode value based on YANG type information
@@ -45,7 +49,7 @@ export function encodeValue(value, typeInfo, sidInfo = null, isUnion = false) {
       return encodeDecimal64(value, typeInfo);
 
     case 'bits':
-      return encodeBits(value, typeInfo);
+      return encodeBits(value, typeInfo, isUnion);
 
     case 'boolean':
       return Boolean(value);
@@ -121,7 +125,7 @@ function encodeEnum(value, typeInfo, isUnion = false) {
   }
 
   // RFC 9254: Use Tag(44) for enum in union context
-  return isUnion ? new Tag(enumValue, 44) : enumValue;
+  return isUnion ? new Tagged(44, enumValue) : enumValue;
 }
 
 /**
@@ -153,7 +157,7 @@ function encodeIdentity(value, typeInfo, sidInfo, isUnion = false) {
   }
 
   // RFC 9254: Use Tag(45) for identityref in union context
-  return isUnion ? new Tag(sid, 45) : sid;
+  return isUnion ? new Tagged(45, sid) : sid;
 }
 
 /**
@@ -175,16 +179,19 @@ function encodeDecimal64(value, typeInfo) {
 
   // RFC 9254: Tag(4, [-fractionDigits, mantissa])
   // Example: 3.14 with fd=2 → Tag(4, [-2, 314])
-  return new Tag([-fractionDigits, mantissa], 4);
+  return new Tagged(4, [-fractionDigits, mantissa]);
 }
 
 /**
- * Encode bits with RFC 9254 Tag(43)
+ * Encode bits per RFC 9254
+ * - Normal context: byte string only
+ * - Union context: Tag(43) + byte string (to distinguish from other types)
  * @param {string|Array} value - Bits value (e.g., "bit0 bit2" or ["bit0", "bit2"])
  * @param {object} typeInfo - Type information with bit definitions
- * @returns {Tag} Tag(43, byteBuffer)
+ * @param {boolean} isUnion - Whether in union context
+ * @returns {Buffer|Tagged} Byte buffer or Tag(43, byteBuffer)
  */
-function encodeBits(value, typeInfo) {
+function encodeBits(value, typeInfo, isUnion = false) {
   let bitNames = [];
 
   if (Array.isArray(value)) {
@@ -221,8 +228,8 @@ function encodeBits(value, typeInfo) {
     bytes[byteIndex] |= (1 << bitIndex);
   });
 
-  // RFC 9254: Tag(43, byteBuffer)
-  return new Tag(bytes, 43);
+  // RFC 9254: Use Tag(43) only in union context to distinguish bits from other types
+  return isUnion ? new Tagged(43, bytes) : bytes;
 }
 
 /**

@@ -293,7 +293,21 @@ function decodeBlock1Value(value) {
  * @returns {Buffer} CoAP message
  */
 function buildiFetchRequest(query, options = {}) {
-  const payload = cborEncode(query);
+  // Handle multiple queries: encode each as separate CBOR and concatenate
+  // Input: [[SID, key], [SID, key], ...] or [SID, key] for single query
+  let payload;
+  if (Array.isArray(query) && query.length > 0 && Array.isArray(query[0])) {
+    // Multiple queries: each element is a [SID, keys...] array
+    const buffers = query.map(q => cborEncode(q));
+    payload = Buffer.concat(buffers);
+  } else {
+    // Single query
+    payload = cborEncode(query);
+  }
+
+  // Block2 option: request server to use block-wise transfer for response
+  // szx=4 means 256 bytes, num=0, more=0 → value=0x04
+  const block2Value = 0x04;
 
   return buildMessage({
     type: MessageType.CON,
@@ -301,9 +315,8 @@ function buildiFetchRequest(query, options = {}) {
     token: options.token || Buffer.alloc(0),  // Empty token (Token Length 0)
     options: [
       { number: OptionNumber.URI_PATH, value: 'c' },  // CORECONF endpoint
-      { number: OptionNumber.URI_QUERY, value: 'd=a' }, // Datastore=all (operational+running)
       { number: OptionNumber.CONTENT_FORMAT, value: ContentFormat.YANG_IDENTIFIERS_CBOR },  // 141 for iFETCH
-      { number: OptionNumber.ACCEPT, value: ContentFormat.YANG_INSTANCES_CBOR }  // 142 to match response format
+      { number: OptionNumber.BLOCK2, value: block2Value }  // Request block-wise response
     ],
     payload,
     ...options

@@ -98,7 +98,11 @@ function extractTypesFromYin(yinObj) {
   const schemaInfo = {
     // Node order (for VelocityDriveSP sorting)
     // Map: local node name → order (within module)
-    nodeOrders: new Map()            // localName → order
+    nodeOrders: new Map(),           // localName → order
+
+    // Node types: path → "list" | "container" | "leaf" | "leaf-list"
+    // Used to determine if a path points to a list (needs array wrapper)
+    nodeTypes: new Map()             // path → nodeType
   };
 
   // Get module or submodule
@@ -164,6 +168,9 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
         schemaInfo.nodeOrders.set(containerName, schemaInfo._orderCounter++);
       }
 
+      // Record node type
+      schemaInfo.nodeTypes.set(newPath, 'container');
+
       extractDataTypes(container, newPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
@@ -179,6 +186,9 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
       if (!schemaInfo.nodeOrders.has(listName)) {
         schemaInfo.nodeOrders.set(listName, schemaInfo._orderCounter++);
       }
+
+      // Record node type as 'list'
+      schemaInfo.nodeTypes.set(newPath, 'list');
 
       extractDataTypes(list, newPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
@@ -213,7 +223,12 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
             !['enumeration', 'identityref', 'decimal64', 'bits', 'union', 'binary', 'boolean', 'string',
               'uint8', 'uint16', 'uint32', 'uint64', 'int8', 'int16', 'int32', 'int64'].includes(typeInfo.type)) {
           // This might be a typedef - check typeTable.typedefs
-          const typedef = typeTable.typedefs.get(typeInfo.type);
+          // Try with full name first, then without module prefix
+          let typedef = typeTable.typedefs.get(typeInfo.type);
+          if (!typedef && typeInfo.type.includes(':')) {
+            const strippedType = typeInfo.type.split(':')[1];
+            typedef = typeTable.typedefs.get(strippedType);
+          }
           if (typedef) {
             // Merge typedef info into typeInfo, keeping original type name
             typeInfo = {
@@ -224,6 +239,9 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
         }
 
         typeTable.types.set(leafPath, typeInfo);
+
+        // Record node type
+        schemaInfo.nodeTypes.set(leafPath, 'leaf');
 
         // Note: Enum BiMap is already stored in typeInfo.enum by parseTypeNode()
       }
@@ -249,7 +267,12 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
         if (typeInfo.type && !typeInfo.enum && !typeInfo.bits && !typeInfo.base &&
             !['enumeration', 'identityref', 'decimal64', 'bits', 'union', 'binary', 'boolean', 'string',
               'uint8', 'uint16', 'uint32', 'uint64', 'int8', 'int16', 'int32', 'int64'].includes(typeInfo.type)) {
-          const typedef = typeTable.typedefs.get(typeInfo.type);
+          // Try with full name first, then without module prefix
+          let typedef = typeTable.typedefs.get(typeInfo.type);
+          if (!typedef && typeInfo.type.includes(':')) {
+            const strippedType = typeInfo.type.split(':')[1];
+            typedef = typeTable.typedefs.get(strippedType);
+          }
           if (typedef) {
             typeInfo = {
               ...typedef,
@@ -259,6 +282,9 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
         }
 
         typeTable.types.set(leafListPath, typeInfo);
+
+        // Record node type
+        schemaInfo.nodeTypes.set(leafListPath, 'leaf-list');
 
         // Note: Enum BiMap is already stored in typeInfo.enum by parseTypeNode()
       }
@@ -270,6 +296,25 @@ function extractDataTypes(node, currentPath, typeTable, schemaInfo, moduleName, 
     const groupings = Array.isArray(node.grouping) ? node.grouping : [node.grouping];
     groupings.forEach(grouping => {
       extractDataTypes(grouping, currentPath, typeTable, schemaInfo, moduleName, depth + 1);
+    });
+  }
+
+  // Extract from augment nodes
+  // Augment extends other modules' data structures
+  if (node.augment) {
+    const augments = Array.isArray(node.augment) ? node.augment : [node.augment];
+    augments.forEach(augment => {
+      // Get target path from augment (e.g., "/if:interfaces/if:interface")
+      // Convert to stripped path: "interfaces/interface"
+      const targetPath = augment['target-node'] || '';
+      const strippedPath = targetPath
+        .replace(/^\//, '')  // Remove leading /
+        .split('/')
+        .map(segment => segment.includes(':') ? segment.split(':')[1] : segment)
+        .join('/');
+
+      // Process augment's children with the target path as base
+      extractDataTypes(augment, strippedPath, typeTable, schemaInfo, moduleName, depth + 1);
     });
   }
 }

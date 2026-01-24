@@ -167,16 +167,87 @@ class WiFiTransport extends Transport {
    * @returns {Promise<Object>} CoAP response
    */
   async sendiFetchRequest(query, options = {}) {
-    const messageId = options.messageId || Math.floor(Math.random() * 65536);
+    if (!this.isConnected) {
+      throw new Error('Not connected');
+    }
+    if (!this.boardReady) {
+      throw new Error('Board not ready. ANNOUNCE not received yet.');
+    }
+
+    const payloads = [];
+    let lastResponse = null;
     const token = options.token || Buffer.alloc(0);
 
+    // Initial request with query payload
+    const initialMessageId = Math.floor(Math.random() * 65536);
     const coapFrame = buildiFetchRequest(query, {
-      messageId,
+      messageId: initialMessageId,
       token,
       ...options
     });
 
-    return this._sendCoAPRequest(coapFrame, messageId);
+    const firstResponse = await this._sendCoAPRequest(coapFrame, initialMessageId);
+    lastResponse = firstResponse;
+
+    if (!firstResponse.isSuccess()) {
+      return firstResponse;
+    }
+
+    if (firstResponse.payload) {
+      payloads.push(firstResponse.payload);
+    }
+
+    // Handle block-wise transfer (Block2 continuation)
+    let block2 = firstResponse.getBlock2Value();
+    let more = block2 ? block2.m : false;
+    let blockNum = block2 ? block2.num : 0;
+
+    while (more) {
+      blockNum++;
+      const messageId = Math.floor(Math.random() * 65536);
+      const block2Value = encodeBlock2Value(blockNum, false, block2.szx);
+
+      // For FETCH continuation, only send URI_PATH and Block2 (no payload)
+      const continuationFrame = buildMessage({
+        type: MessageType.CON,
+        code: MethodCode.FETCH,
+        messageId,
+        token,
+        options: [
+          { number: OptionNumber.URI_PATH, value: 'c' },
+          { number: OptionNumber.BLOCK2, value: block2Value }
+        ]
+      });
+
+      this.log(`[CoAP] Requesting block ${blockNum}`);
+      const response = await this._sendCoAPRequest(continuationFrame, messageId);
+      lastResponse = response;
+
+      if (!response.isSuccess()) {
+        throw new Error(`Block ${blockNum} failed with code ${response.code}`);
+      }
+
+      if (response.payload) {
+        payloads.push(response.payload);
+      }
+
+      const nextBlock2 = response.getBlock2Value();
+      if (nextBlock2) {
+        more = nextBlock2.m;
+        block2 = nextBlock2;
+      } else {
+        more = false;
+      }
+    }
+
+    this.log(`[CoAP] iFETCH complete. Assembled ${payloads.length} block(s).`);
+    const assembledPayload = Buffer.concat(payloads);
+
+    // Return response with assembled payload
+    return {
+      ...lastResponse,
+      payload: assembledPayload
+    };
   }
 
   /**
@@ -572,10 +643,10 @@ class WiFiTransport extends Transport {
       this.log('[MUP1] ANNOUNCE received');
       this.emit('announce', { data: frame.payload });
     } else if (frame.type === FrameType.TRACE) {
-      const errorMessage = frame.payload.toString();
-      this.log('[MUP1] TRACE received:', errorMessage);
-      this._handleTrace(errorMessage);
-      this.emit('trace', { data: frame.payload, error: errorMessage });
+      const traceMessage = frame.payload.toString();
+      this.log('[MUP1] TRACE received:', traceMessage);
+      // TRACE frames are debug output, not errors - just emit event without failing requests
+      this.emit('trace', { data: frame.payload, message: traceMessage });
     }
   }
 
