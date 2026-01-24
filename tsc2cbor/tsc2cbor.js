@@ -136,7 +136,7 @@ class Tsc2CborConverter {
         console.log('Direct transformation: Instance-ID -> Delta-SID Object...');
       }
 
-      transformed = transformInstanceIdentifier(jsonData, this.typeTable, this.sidInfo, {
+      transformed = transformInstanceIdentifier(jsonData, this.typeTable, this.sidInfo, this.schemaInfo, {
         useMap: true,
         sortMode,
         verbose
@@ -163,10 +163,22 @@ class Tsc2CborConverter {
       console.log('\nEncoding: JavaScript Object -> CBOR Binary...');
     }
 
-    const cbor = encodeToCbor(transformed, {
-      useCompatible: compatible,
-      sortMode
-    });
+    let cbor;
+    // For fetch (path-only): transformed is an Array of [SID, keys...] arrays
+    // Each element should be encoded separately and concatenated
+    // Use definite-length encoding for simple arrays (device compatibility)
+    if (Array.isArray(transformed) && transformed.length > 0 && Array.isArray(transformed[0])) {
+      const buffers = transformed.map(item => encodeToCbor(item, {
+        useCompatible: false,  // definite-length for fetch arrays
+        sortMode
+      }));
+      cbor = Buffer.concat(buffers);
+    } else {
+      cbor = encodeToCbor(transformed, {
+        useCompatible: compatible,
+        sortMode
+      });
+    }
 
     const encodingStats = getEncodingStats(transformed, cbor);
 

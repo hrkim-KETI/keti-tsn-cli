@@ -195,16 +195,87 @@ class SerialManager extends EventEmitter {
    * @returns {Promise<Object>} CoAP response with decoded CBOR
    */
   async sendiFetchRequest(query, options = {}) {
-    const messageId = options.messageId || Math.floor(Math.random() * 65536);
-    const token = options.token || Buffer.alloc(0);  // Empty token for CORECONF
+    if (!this.isConnected) {
+      throw new Error('Not connected');
+    }
+    if (!this.boardReady) {
+      throw new Error('Board not ready. ANNOUNCE frame not received yet.');
+    }
 
+    const payloads = [];
+    let lastResponse = null;
+    const token = options.token || Buffer.alloc(0);
+
+    // Initial request with query payload
+    const initialMessageId = Math.floor(Math.random() * 65536);
     const coapFrame = buildiFetchRequest(query, {
-      messageId,
+      messageId: initialMessageId,
       token,
       ...options
     });
 
-    return this._sendRequest(coapFrame, messageId);
+    const firstResponse = await this._sendRequest(coapFrame, initialMessageId);
+    lastResponse = firstResponse;
+
+    if (!firstResponse.isSuccess()) {
+      return firstResponse;
+    }
+
+    if (firstResponse.payload) {
+      payloads.push(firstResponse.payload);
+    }
+
+    // Handle block-wise transfer (Block2 continuation)
+    let block2 = firstResponse.getBlock2Value();
+    let more = block2 ? block2.m : false;
+    let blockNum = block2 ? block2.num : 0;
+
+    while (more) {
+      blockNum++;
+      const messageId = Math.floor(Math.random() * 65536);
+      const block2Value = encodeBlock2Value(blockNum, false, block2.szx);
+
+      // For FETCH continuation, only send URI_PATH and Block2 (no payload)
+      const continuationFrame = buildMessage({
+        type: MessageType.CON,
+        code: MethodCode.FETCH,
+        messageId,
+        token,
+        options: [
+          { number: OptionNumber.URI_PATH, value: 'c' },
+          { number: OptionNumber.BLOCK2, value: block2Value }
+        ]
+      });
+
+      this.log(`[CoAP] Requesting block ${blockNum}`);
+      const response = await this._sendRequest(continuationFrame, messageId);
+      lastResponse = response;
+
+      if (!response.isSuccess()) {
+        throw new Error(`Block ${blockNum} failed with code ${response.code}`);
+      }
+
+      if (response.payload) {
+        payloads.push(response.payload);
+      }
+
+      const nextBlock2 = response.getBlock2Value();
+      if (nextBlock2) {
+        more = nextBlock2.m;
+        block2 = nextBlock2;
+      } else {
+        more = false;
+      }
+    }
+
+    this.log(`[CoAP] iFETCH complete. Assembled ${payloads.length} block(s).`);
+    const assembledPayload = Buffer.concat(payloads);
+
+    // Return response with assembled payload
+    return {
+      ...lastResponse,
+      payload: assembledPayload
+    };
   }
 
   /**
@@ -734,21 +805,10 @@ class SerialManager extends EventEmitter {
       this.boardReady = true; // Board is ready for requests immediately after announce
       this.emit('announce', { data: frame.payload });
     } else if (frame.type === FrameType.TRACE) {
-      const errorMessage = frame.payload.toString();
-      this.log('[MUP1] Trace frame received:', errorMessage);
-
-      // If there are pending requests, fail them immediately with device error
-      if (this.pendingRequests.size > 0) {
-        this.log(`[MUP1] Failing ${this.pendingRequests.size} pending request(s) due to device error`);
-
-        for (const [messageId, pending] of this.pendingRequests.entries()) {
-          clearTimeout(pending.timeout);
-          pending.reject(new Error(`Device error: ${errorMessage}`));
-          this.pendingRequests.delete(messageId);
-        }
-      }
-
-      this.emit('trace', { data: frame.payload, error: errorMessage });
+      const traceMessage = frame.payload.toString();
+      this.log('[MUP1] Trace frame received:', traceMessage);
+      // TRACE frames are debug output, not errors - just emit event without failing requests
+      this.emit('trace', { data: frame.payload, message: traceMessage });
     }
   }
 

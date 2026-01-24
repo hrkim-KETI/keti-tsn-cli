@@ -16,7 +16,11 @@ import path from 'path';
 
 // Cache version - increment when cache format changes
 // v8: Renamed nodeInfo → pathToInfo, nodeInfoBySid → sidToInfo
-const CACHE_VERSION = 8;
+// v9: Added augment node processing in yang-type-extractor
+// v10: Added leafToTypes index for O(1) type lookup by leaf name
+// v11: Added nodeTypes map for list/container detection
+// v12: Fixed typedef resolution with module prefix stripping
+const CACHE_VERSION = 12;
 
 /**
  * Get cache file path for a YANG cache directory
@@ -68,10 +72,16 @@ function serializeData(sidInfo, typeTable, schemaInfo) {
     },
     typeTable: {
       types: [...typeTable.types].map(([k, v]) => [k, serializeTypeInfo(v)]),
-      typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)])
+      typedefs: [...typeTable.typedefs].map(([k, v]) => [k, serializeTypeInfo(v)]),
+      leafToTypes: [...typeTable.leafToTypes].map(([k, v]) => [k, v.map(item => ({
+        path: item.path,
+        typeInfo: serializeTypeInfo(item.typeInfo)
+      }))])
     },
     schemaInfo: {
-      nodeOrders: [...schemaInfo.nodeOrders]
+      nodeOrders: [...schemaInfo.nodeOrders],
+      nodeTypes: [...schemaInfo.nodeTypes],
+      leafToNodeTypes: [...schemaInfo.leafToNodeTypes]
     }
   };
 }
@@ -111,11 +121,17 @@ function deserializeData(data) {
 
   const typeTable = {
     types: new Map(data.typeTable.types.map(([k, v]) => [k, deserializeTypeInfo(v)])),
-    typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)]))
+    typedefs: new Map(data.typeTable.typedefs.map(([k, v]) => [k, deserializeTypeInfo(v)])),
+    leafToTypes: new Map(data.typeTable.leafToTypes.map(([k, v]) => [k, v.map(item => ({
+      path: item.path,
+      typeInfo: deserializeTypeInfo(item.typeInfo)
+    }))]))
   };
 
   const schemaInfo = {
-    nodeOrders: new Map(data.schemaInfo.nodeOrders)
+    nodeOrders: new Map(data.schemaInfo.nodeOrders),
+    nodeTypes: new Map(data.schemaInfo.nodeTypes),
+    leafToNodeTypes: new Map(data.schemaInfo.leafToNodeTypes)
   };
 
   return { sidInfo, typeTable, schemaInfo };
@@ -311,7 +327,8 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
   };
 
   const schemaInfo = {
-    nodeOrders: new Map()
+    nodeOrders: new Map(),
+    nodeTypes: new Map()
   };
 
   // Load all YANG files in parallel for better performance
@@ -330,6 +347,11 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
     if (result.schemaInfo?.nodeOrders) {
       for (const [nodeName, order] of result.schemaInfo.nodeOrders) {
         schemaInfo.nodeOrders.set(nodeName, order);
+      }
+    }
+    if (result.schemaInfo?.nodeTypes) {
+      for (const [nodePath, nodeType] of result.schemaInfo.nodeTypes) {
+        schemaInfo.nodeTypes.set(nodePath, nodeType);
       }
     }
   }
@@ -371,6 +393,57 @@ export async function loadYangInputs(yangCacheDir, verbose = false, options = {}
         original: typeInfo.original
       });
     }
+  }
+
+  // Step 7: Post-process typedef resolution
+  // Typedefs from other modules may not have been available during initial processing
+  const builtinTypes = ['enumeration', 'identityref', 'decimal64', 'bits', 'union',
+    'binary', 'boolean', 'string', 'empty',
+    'uint8', 'uint16', 'uint32', 'uint64', 'int8', 'int16', 'int32', 'int64'];
+
+  for (const [path, typeInfo] of typeTable.types) {
+    // Skip if already resolved (has enum, bits, or base property)
+    if (typeInfo.enum || typeInfo.bits || typeInfo.base) continue;
+
+    // Skip built-in types
+    if (builtinTypes.includes(typeInfo.type)) continue;
+
+    // Try to resolve typedef
+    let typedef = typeTable.typedefs.get(typeInfo.type);
+    if (!typedef && typeInfo.type.includes(':')) {
+      const strippedType = typeInfo.type.split(':')[1];
+      typedef = typeTable.typedefs.get(strippedType);
+    }
+
+    if (typedef) {
+      // Update the type entry with resolved typedef info
+      typeTable.types.set(path, {
+        ...typedef,
+        original: typeInfo.type
+      });
+    }
+  }
+
+  // Step 8: Build leafToTypes index for O(1) type lookup by leaf name
+  // This enables fuzzy matching when grouping paths don't match full SID paths
+  typeTable.leafToTypes = new Map();
+  for (const [path, typeInfo] of typeTable.types) {
+    const leafName = path.split('/').pop();
+    if (!typeTable.leafToTypes.has(leafName)) {
+      typeTable.leafToTypes.set(leafName, []);
+    }
+    typeTable.leafToTypes.get(leafName).push({ path, typeInfo });
+  }
+
+  // Step 9: Build leafToNodeTypes index for O(1) node type lookup
+  // This enables detecting list/container when path doesn't exactly match
+  schemaInfo.leafToNodeTypes = new Map();
+  for (const [path, nodeType] of schemaInfo.nodeTypes) {
+    const leafName = path.split('/').pop();
+    if (!schemaInfo.leafToNodeTypes.has(leafName)) {
+      schemaInfo.leafToNodeTypes.set(leafName, []);
+    }
+    schemaInfo.leafToNodeTypes.get(leafName).push({ path, nodeType });
   }
 
   if (verbose) {
