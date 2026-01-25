@@ -173,6 +173,18 @@ class Tsc2CborConverter {
         sortMode
       }));
       cbor = Buffer.concat(buffers);
+    } else if (transformed instanceof Map && transformed.size > 0) {
+      // For ipatch: each Map entry should be encoded as a separate CBOR item
+      // This matches mup1cc behavior: each { [SID, keys...] => value } is a separate CBOR map
+      const buffers = [];
+      for (const [key, value] of transformed.entries()) {
+        const singleEntryMap = new Map([[key, value]]);
+        buffers.push(encodeToCbor(singleEntryMap, {
+          useCompatible: compatible,
+          sortMode
+        }));
+      }
+      cbor = Buffer.concat(buffers);
     } else {
       cbor = encodeToCbor(transformed, {
         useCompatible: compatible,
