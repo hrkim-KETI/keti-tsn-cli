@@ -12,68 +12,27 @@ import cbor from 'cbor';
 export { Tag };
 
 /**
- * Mark Map/Object as indefinite-length for cbor library
- * This tells cbor library to use indefinite-length encoding (bf...ff) without Tag(259)
- * @param {*} data - Data to mark
- * @returns {*} Data with _indefinite flag
+ * Encode CBOR major type with length
+ * @param {number} majorType - CBOR major type (0-7)
+ * @param {number} length - Length value
+ * @returns {Buffer} Encoded header bytes
  */
-function markIndefinite(data) {
-  // Skip primitives
-  if (data === null || data === undefined || typeof data !== 'object') {
-    return data;
-  }
-
-  // Skip CBOR Tagged values - they should be encoded as-is
-  if (data instanceof cbor.Tagged) {
-    return data;
-  }
-
-  // Skip Buffers
-  if (Buffer.isBuffer(data)) {
-    return data;
-  }
-
-  // Process arrays recursively
-  if (Array.isArray(data)) {
-    const processedArray = data.map(item => markIndefinite(item));
-    // Set _indefinite as non-enumerable property for arrays too
-    Object.defineProperty(processedArray, '_indefinite', {
-      value: true,
-      enumerable: false,
-      writable: true,
-      configurable: true
-    });
-    return processedArray;
-  }
-
-  // For Maps and Objects, set _indefinite flag and recursively process values
-  if (data instanceof Map) {
-    const processedMap = new Map();
-    for (const [key, value] of data.entries()) {
-      processedMap.set(key, markIndefinite(value));
-    }
-    // Set _indefinite as non-enumerable property so cbor library reads it but doesn't encode it
-    Object.defineProperty(processedMap, '_indefinite', {
-      value: true,
-      enumerable: false,
-      writable: true,
-      configurable: true
-    });
-    return processedMap;
+function encodeCborHeader(majorType, length) {
+  const mt = majorType << 5;
+  if (length < 24) {
+    return Buffer.from([mt | length]);
+  } else if (length < 256) {
+    return Buffer.from([mt | 24, length]);
+  } else if (length < 65536) {
+    return Buffer.from([mt | 25, (length >> 8) & 0xff, length & 0xff]);
+  } else if (length < 4294967296) {
+    return Buffer.from([mt | 26, (length >> 24) & 0xff, (length >> 16) & 0xff, (length >> 8) & 0xff, length & 0xff]);
   } else {
-    // Plain Object
-    const processedObj = {};
-    for (const [key, value] of Object.entries(data)) {
-      processedObj[key] = markIndefinite(value);
-    }
-    // Set _indefinite as non-enumerable property
-    Object.defineProperty(processedObj, '_indefinite', {
-      value: true,
-      enumerable: false,
-      writable: true,
-      configurable: true
-    });
-    return processedObj;
+    // For very large lengths, use 8-byte encoding
+    const buf = Buffer.alloc(9);
+    buf[0] = mt | 27;
+    buf.writeBigUInt64BE(BigInt(length), 1);
+    return buf;
   }
 }
 
@@ -115,13 +74,13 @@ function convertNumericKeys(data) {
 }
 
 /**
- * Encode with indefinite-length maps (manual CBOR construction)
- * This matches yaml2cbor_js approach: 0xBF ... pairs ... 0xFF
+ * Encode with definite-length maps/arrays (manual CBOR construction)
+ * This matches mup1cc approach: definite-length encoding for all containers
  * @param {*} obj - Data to encode
  * @param {string} sortMode - Sort mode: 'velocity' or 'rfc8949'
  * @returns {Buffer} CBOR bytes
  */
-function encodeWithIndefinite(obj, sortMode = 'rfc8949') {
+function encodeWithDefinite(obj, sortMode = 'rfc8949') {
   // Primitives and nulls
   if (obj === null || obj === undefined || typeof obj !== 'object') {
     return cbor.encode(obj);
@@ -137,65 +96,18 @@ function encodeWithIndefinite(obj, sortMode = 'rfc8949') {
     return cbor.encode(obj);
   }
 
-  // Arrays
+  // Arrays - always use definite-length
   if (Array.isArray(obj)) {
-    if (obj._indefinite) {
-      // Indefinite-length array: 0x9F ... items ... 0xFF
-      const items = obj.map(item => encodeWithIndefinite(item, sortMode));
-      return Buffer.concat([
-        Buffer.from([0x9F]), // Start indefinite array
-        ...items,
-        Buffer.from([0xFF])  // Break
-      ]);
-    }
-    return cbor.encode(obj.map(item =>
-      typeof item === 'object' && item !== null ?
-        cbor.decodeFirstSync(encodeWithIndefinite(item, sortMode)) : item
-    ));
+    const items = obj.map(item => encodeWithDefinite(item, sortMode));
+    return Buffer.concat([
+      encodeCborHeader(4, obj.length), // Major type 4 = array
+      ...items
+    ]);
   }
 
-  // Maps
+  // Maps - always use definite-length
   if (obj instanceof Map) {
-    if (obj._indefinite) {
-      // Indefinite-length map: 0xBF ... pairs ... 0xFF
-      let entries = Array.from(obj.entries());
-
-      // Only sort for RFC 8949 mode - VelocityDriveSP mode preserves transformer ordering
-      if (sortMode === 'rfc8949') {
-        entries = entries.sort((a, b) => {
-          const keyA = cbor.encode(a[0]);
-          const keyB = cbor.encode(b[0]);
-          return Buffer.compare(keyA, keyB);
-        });
-      }
-
-      const pairs = [];
-      for (const [key, value] of entries) {
-        pairs.push(cbor.encode(key));
-        pairs.push(encodeWithIndefinite(value, sortMode));
-      }
-      return Buffer.concat([
-        Buffer.from([0xBF]), // Start indefinite map
-        ...pairs,
-        Buffer.from([0xFF])  // Break
-      ]);
-    }
-
-    // Regular map (shouldn't happen in compatible mode)
-    const regularMap = new Map();
-    for (const [key, value] of obj.entries()) {
-      regularMap.set(key,
-        typeof value === 'object' && value !== null ?
-          cbor.decodeFirstSync(encodeWithIndefinite(value, sortMode)) : value
-      );
-    }
-    return cbor.encode(regularMap);
-  }
-
-  // Plain objects
-  if (obj._indefinite) {
-    // Convert Object to Map entries for indefinite encoding
-    let entries = Object.entries(obj);
+    let entries = Array.from(obj.entries());
 
     // Only sort for RFC 8949 mode - VelocityDriveSP mode preserves transformer ordering
     if (sortMode === 'rfc8949') {
@@ -209,16 +121,35 @@ function encodeWithIndefinite(obj, sortMode = 'rfc8949') {
     const pairs = [];
     for (const [key, value] of entries) {
       pairs.push(cbor.encode(key));
-      pairs.push(encodeWithIndefinite(value, sortMode));
+      pairs.push(encodeWithDefinite(value, sortMode));
     }
     return Buffer.concat([
-      Buffer.from([0xBF]), // Start indefinite map
-      ...pairs,
-      Buffer.from([0xFF])  // Break
+      encodeCborHeader(5, entries.length), // Major type 5 = map
+      ...pairs
     ]);
   }
 
-  return cbor.encode(obj);
+  // Plain objects - convert to definite-length map
+  let entries = Object.entries(obj);
+
+  // Only sort for RFC 8949 mode - VelocityDriveSP mode preserves transformer ordering
+  if (sortMode === 'rfc8949') {
+    entries = entries.sort((a, b) => {
+      const keyA = cbor.encode(a[0]);
+      const keyB = cbor.encode(b[0]);
+      return Buffer.compare(keyA, keyB);
+    });
+  }
+
+  const pairs = [];
+  for (const [key, value] of entries) {
+    pairs.push(cbor.encode(key));
+    pairs.push(encodeWithDefinite(value, sortMode));
+  }
+  return Buffer.concat([
+    encodeCborHeader(5, entries.length), // Major type 5 = map
+    ...pairs
+  ]);
 }
 
 /**
@@ -234,10 +165,9 @@ export function encodeToCbor(data, options = {}) {
     const sortMode = options.sortMode || 'rfc8949';
 
     if (options.useCompatible) {
-      // Compatible mode: Manual CBOR construction with indefinite-length encoding
-      // This produces CBOR without Tag(259), matching VelocityDriveSP output
-      const markedData = markIndefinite(data);
-      return encodeWithIndefinite(markedData, sortMode);
+      // Compatible mode: Manual CBOR construction with definite-length encoding
+      // This produces CBOR without Tag(259), matching mup1cc/VelocityDriveSP output
+      return encodeWithDefinite(data, sortMode);
     } else {
       // Normal mode: Use cbor-x with Tag(259) for better roundtrip support
       // Convert plain Objects with numeric string keys to Maps with numeric keys
