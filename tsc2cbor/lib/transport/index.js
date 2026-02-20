@@ -6,13 +6,15 @@
 
 import { SerialTransport } from './serial-transport.js';
 import { WiFiTransport } from './wifi-transport.js';
+import { EthernetTransport } from './ethernet-transport.js';
 
 /**
  * Available transport types
  */
 const TransportType = {
   SERIAL: 'serial',
-  WIFI: 'wifi'
+  WIFI: 'wifi',
+  ETHERNET: 'eth'
 };
 
 /**
@@ -29,6 +31,9 @@ function createTransport(type, options = {}) {
 
     case TransportType.WIFI:
       return new WiFiTransport(options);
+
+    case TransportType.ETHERNET:
+      return new EthernetTransport(options);
 
     default:
       throw new Error(`Unknown transport type: ${type}. Available types: ${Object.values(TransportType).join(', ')}`);
@@ -48,5 +53,6 @@ export {
   TransportType,
   getDefaultTransportType,
   SerialTransport,
-  WiFiTransport
+  WiFiTransport,
+  EthernetTransport
 };

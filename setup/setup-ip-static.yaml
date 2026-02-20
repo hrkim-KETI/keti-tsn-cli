@@ -1,0 +1,18 @@
+# LAN9692 L3 VLAN 인터페이스 생성 + Static IP 할당
+# 사용법: keti-tsn patch setup/setup-ip-static.yaml
+#
+# 선행 조건:
+#   1. keti-tsn download (YANG 카탈로그 필요)
+#   2. Serial 연결 (최초 설정은 MUP1로만 가능)
+#
+# 설정 후 저장: keti-tsn post setup/save-config.yaml
+
+# Step 1: L3 VLAN 인터페이스 생성 (기본 VLAN 1 사용)
+- ? "/ietf-interfaces:interfaces/interface"
+  : name: L3V1
+    type: iana-if-type:l3ipvlan
+
+# Step 2: Static IP 할당 (필요에 따라 IP 주소 변경)
+- ? "/ietf-interfaces:interfaces/interface[name='L3V1']/ietf-ip:ipv4/address"
+  : ip: 192.168.1.10
+    prefix-length: 24

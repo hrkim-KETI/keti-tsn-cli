@@ -340,8 +340,7 @@ function buildiPatchRequest(patch, options = {}) {
     token: options.token || Buffer.alloc(0),  // Empty token (Token Length 0)
     options: [
       { number: OptionNumber.URI_PATH, value: 'c' },  // CORECONF endpoint
-      // No datastore query parameter for iPATCH (operates on running datastore by default)
-      { number: OptionNumber.CONTENT_FORMAT, value: ContentFormat.YANG_INSTANCES_CBOR },  // 142 for iPATCH (VelocityDrive SP spec)
+      { number: OptionNumber.CONTENT_FORMAT, value: ContentFormat.YANG_INSTANCES_CBOR },  // 142 for iPATCH
       { number: OptionNumber.ACCEPT, value: ContentFormat.YANG_DATA_CBOR_SID }  // 140 for response
     ],
     payload,
@@ -351,12 +350,14 @@ function buildiPatchRequest(patch, options = {}) {
 
 /**
  * Build POST request (RPC/action invocation)
- * @param {Object|Map} payload - CBOR-encodable payload
+ * @param {Buffer|Object} payload - CBOR-encoded Buffer or CBOR-encodable object
  * @param {Object} options - Additional options
  * @returns {Buffer} CoAP message
  */
 function buildPostRequest(payload, options = {}) {
-  const encodedPayload = cborEncode(payload);
+  // If payload is already CBOR-encoded Buffer, use it directly
+  // Otherwise, encode it
+  const encodedPayload = Buffer.isBuffer(payload) ? payload : cborEncode(payload);
 
   return buildMessage({
     type: MessageType.CON,
@@ -365,7 +366,7 @@ function buildPostRequest(payload, options = {}) {
     options: [
       { number: OptionNumber.URI_PATH, value: 'c' },
       { number: OptionNumber.CONTENT_FORMAT, value: ContentFormat.YANG_INSTANCES_CBOR },
-      { number: OptionNumber.ACCEPT, value: ContentFormat.YANG_DATA_CBOR_SID }
+      { number: OptionNumber.ACCEPT, value: ContentFormat.YANG_INSTANCES_CBOR }
     ],
     payload: encodedPayload,
     ...options
@@ -523,6 +524,7 @@ export {
   ResponseCode,
   OptionNumber,
   ContentFormat,
+  cborEncode,
   cborDecode,
   buildMessage,
   buildiFetchRequest,

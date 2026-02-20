@@ -54,12 +54,13 @@ Commands:
   get                   Get full configuration from device
   fetch <file>          Fetch configuration values from device
   patch <file>          Apply configuration patch to device
+  post <file>           Invoke RPC operation (e.g., save-config)
 
 Transport Options:
-  --transport <type>    Transport type: serial | wifi (default: ${DEFAULT_TRANSPORT})
+  --transport <type>    Transport type: serial | wifi | eth (default: ${DEFAULT_TRANSPORT})
   -d, --device <path>   Serial device path (default: ${DEFAULT_DEVICE})
-  --host <address>      WiFi proxy IP address (required for wifi transport)
-  --port <number>       WiFi proxy port (default: ${DEFAULT_WIFI_PORT})
+  --host <address>      Target IP address (required for wifi/eth transport)
+  --port <number>       Target UDP port (default: ${DEFAULT_WIFI_PORT})
 
 General Options:
   -o, --output <file>   Output file
@@ -79,6 +80,11 @@ Examples:
   keti-tsn checksum --transport wifi --host 192.168.1.100
   keti-tsn patch config.yaml --transport wifi --host 192.168.1.100
   keti-tsn get -o backup.yaml --transport wifi --host 192.168.1.100 --port 5683
+
+  # Ethernet transport (direct CoAP/UDP to LAN9692 data plane)
+  keti-tsn checksum --transport eth --host 192.168.1.10
+  keti-tsn patch config.yaml --transport eth --host 192.168.1.10
+  keti-tsn get -o backup.yaml --transport eth --host 192.168.1.10
 
   # Offline commands
   keti-tsn list                                  # List cached catalogs
@@ -142,14 +148,14 @@ function parseArgs(args) {
   }
 
   // Validate transport options
-  if (options.transport === 'wifi' && !options.host) {
-    console.error('Error: --host is required when using WiFi transport');
+  if ((options.transport === 'wifi' || options.transport === 'eth') && !options.host) {
+    console.error(`Error: --host is required when using ${options.transport} transport`);
     process.exit(1);
   }
 
-  if (options.transport !== 'serial' && options.transport !== 'wifi') {
+  if (options.transport !== 'serial' && options.transport !== 'wifi' && options.transport !== 'eth') {
     console.error(`Error: Unknown transport type: ${options.transport}`);
-    console.log('Available transports: serial, wifi');
+    console.log('Available transports: serial, wifi, eth');
     process.exit(1);
   }
 
@@ -243,6 +249,17 @@ async function main() {
           process.exit(1);
         }
         await patchCommand(options.file, options);
+        break;
+      }
+
+      case 'post': {
+        const { postCommand } = await import('../lib/commands/post.js');
+        if (!options.file) {
+          console.error('Error: Input file required');
+          console.log('Usage: keti-tsn post <file>');
+          process.exit(1);
+        }
+        await postCommand(options.file, options);
         break;
       }
 

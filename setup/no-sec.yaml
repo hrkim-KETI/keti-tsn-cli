@@ -1,0 +1,4 @@
+# CoAP 보안 모드를 no-sec으로 변경 (포트 5683 활성화)
+# 사용법: keti-tsn patch setup/no-sec.yaml -v
+# 적용 후 save-config + 리부트 필요
+- "/mchp-velocitysp-system:coap-server/config/security-mode": no-sec
